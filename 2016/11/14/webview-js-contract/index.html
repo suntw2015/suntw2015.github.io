@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="前言在开发IOS应用的过程中，难免的会遇到和WebView打交道的场景，通常为了实现产品经理的功能需求还要去和WebView里面的JS进行交互。作为一个刚IOS开发的新人来说，第一次肯定会遇到各种问题和各种坑。在这里我把我的问题和解决方法罗列出来，希望对其他的大胸弟们有所帮助。 概述IOS提供给我们的WebView控件类型总共有3中，UIWebView，WkWebView，SFSafariView">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UIWebView和JS交互">
+<meta property="og:url" content="http://suntw2015.github.io/2016/11/14/webview-js-contract/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="前言在开发IOS应用的过程中，难免的会遇到和WebView打交道的场景，通常为了实现产品经理的功能需求还要去和WebView里面的JS进行交互。作为一个刚IOS开发的新人来说，第一次肯定会遇到各种问题和各种坑。在这里我把我的问题和解决方法罗列出来，希望对其他的大胸弟们有所帮助。 概述IOS提供给我们的WebView控件类型总共有3中，UIWebView，WkWebView，SFSafariView">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2016-11-14T01:28:55.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.196Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="IOS">
+<meta property="article:tag" content="UIWebView">
+<meta property="article:tag" content="JS">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2016/11/14/webview-js-contract/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>UIWebView和JS交互 | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">2.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#UIWebView"><span class="nav-number">3.</span> <span class="nav-text">UIWebView</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#UIWebView%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B"><span class="nav-number">3.1.</span> <span class="nav-text">UIWebView加载过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UIWebView%E5%92%8CJS%E4%BA%A4%E4%BA%92"><span class="nav-number">3.2.</span> <span class="nav-text">UIWebView和JS交互</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#WKWebView"><span class="nav-number">4.</span> <span class="nav-text">WKWebView</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SFSafariView"><span class="nav-number">5.</span> <span class="nav-text">SFSafariView</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2016/11/14/webview-js-contract/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UIWebView和JS交互
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2016-11-14 09:28:55" itemprop="dateCreated datePublished" datetime="2016-11-14T09:28:55+08:00">2016-11-14</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/IOS/" itemprop="url" rel="index"><span itemprop="name">IOS</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>在开发IOS应用的过程中，难免的会遇到和WebView打交道的场景，通常为了实现产品经理的功能需求还要去和WebView里面的JS进行交互。作为一个刚IOS开发的新人来说，第一次肯定会遇到各种问题和各种坑。在这里我把我的问题和解决方法罗列出来，希望对其他的大胸弟们有所帮助。</p>
+<h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>IOS提供给我们的WebView控件类型总共有3中，<code>UIWebView</code>，<code>WkWebView</code>，<code>SFSafariView</code>。这三种类型的控件有这不同的使用限制和要求，在实际项目中，我们需要根据项目的实际要求选择其中的一个就可以了。接下来，我会介绍一下这三种类型的区别。</p>
+<span id="more"></span>
+
+<h2 id="UIWebView"><a href="#UIWebView" class="headerlink" title="UIWebView"></a>UIWebView</h2><p><a target="_blank" rel="noopener" href="https://developer.apple.com/reference/uikit/uiwebview">UIWebView</a>作为IOS应用提供给开发者最早的一个控件，在当时算是一个很不错的控件，但是基于今天的现状而言，却显得有些鸡肋了。加载速度慢，内存开销大对于产品和开发者来说都是很大的问题，特别是在第一次加载网页时，经常会出现加载10秒以上的情况。</p>
+<h3 id="UIWebView加载过程"><a href="#UIWebView加载过程" class="headerlink" title="UIWebView加载过程"></a>UIWebView加载过程</h3><p><a target="_blank" rel="noopener" href="https://developer.apple.com/reference/uikit/uiwebview">UIWebView</a>加载网页主要会用到一下四个方法</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType</span><br></pre></td></tr></table></figure>
+<p>当WebView收到一个打开链接请求时，会触发此方法，向我们询问是否要加载这个链接请求，返回<code>YES</code>就表示允许加载这个链接请求，否则不加载链接请求。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">- (void) webViewDidStartLoad:(UIWebView *)webView</span><br></pre></td></tr></table></figure>
+<p>当上一步允许加载链接请求后，WebView会触发此方法，告知我们要开始加载了,这时我们可以加一个loading的效果提示用户。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">- (void) webViewDidFinishLoad:(UIWebView *)webView</span><br></pre></td></tr></table></figure>
+<p>当整个网页加载完成之后会触发此方法，如果上一步加上loading效果的话，在这个就要去掉了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">- (void) webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error</span><br></pre></td></tr></table></figure>
+<p>当加载过程中出错，比如无网络、404什么的，会执行这个方法。这里我们要把loading去掉，如果为了友好的话，可以展示一个加载失败的界面。</p>
+<h3 id="UIWebView和JS交互"><a href="#UIWebView和JS交互" class="headerlink" title="UIWebView和JS交互"></a>UIWebView和JS交互</h3><p><a target="_blank" rel="noopener" href="https://developer.apple.com/reference/uikit/uiwebview">UIWebView</a>和JS交互主要依托于一个<code>JSExport</code>的协议，具体来说就是在加载网页的过程中，我们去拿到网页运行JS的环境，然后JS执行某些方法时我们就可以捕获到，然后执行自己的逻辑。</p>
+<blockquote>
+<p>注意：和JS的交互过程中需要分两种情况，一种是捕获JS中无参数或一种参数的方法，另一种是捕获JS中大于等于2个参数的方法。因为OC中的方法名是由传统意义上的方法名+外部参数名构成的，所以当我们捕获第二种情况的JS方法时需要注意和OC方法名的对应关系。下面的示例中会有介绍。</p>
+</blockquote>
+<p>OK,接下来给大家放出一段示例代码，示例中会讲解到UIWebView和加载一个网页的流程，以及网页的JS如何和原生的代码交互。</p>
+<p>ViewController.h</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;</span><br><span class="line">&#x2F;&#x2F;  ViewController.h</span><br><span class="line">&#x2F;&#x2F;  webviewDemo</span><br><span class="line">&#x2F;&#x2F;</span><br><span class="line">&#x2F;&#x2F;  Created by 孙天文 on 16&#x2F;11&#x2F;15.</span><br><span class="line">&#x2F;&#x2F;  Copyright © 2016年 孙天文. All rights reserved.</span><br><span class="line">&#x2F;&#x2F;</span><br><span class="line"></span><br><span class="line">#import &lt;UIKit&#x2F;UIKit.h&gt;</span><br><span class="line">#import &lt;JavaScriptCore&#x2F;JavaScriptCore.h&gt;</span><br><span class="line"></span><br><span class="line">&#x2F;&#x2F;定义一个和JS交互的协议，用来处理JS中的方法，这个协议中列出了4个方法，分别是无参数、一个参数、两个参数以及三个参数的方法</span><br><span class="line">@protocol demoJsResponseProtocol &lt;JSExport&gt;</span><br><span class="line"></span><br><span class="line">- (void) sayHello;</span><br><span class="line"></span><br><span class="line">- (void) setTitle:(NSString *)title;</span><br><span class="line"></span><br><span class="line">&#x2F;&#x2F;下面是大于等于两个参数的情况，要注意这个格式和JS中的格式对比</span><br><span class="line">- (void) setTitle:(NSString *)title Left:(NSString *)leftTitle;</span><br><span class="line"></span><br><span class="line">- (void) setTitle:(NSString *)title Left:(NSString *)leftTitle Right:(NSString *)rightTitle;</span><br><span class="line"></span><br><span class="line">@end</span><br><span class="line"></span><br><span class="line">@interface ViewController : UIViewController&lt;demoJsResponseProtocol&gt;</span><br><span class="line"></span><br><span class="line">@end</span><br></pre></td></tr></table></figure>
+
+<p>ViewController.m</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;</span><br><span class="line">&#x2F;&#x2F;  ViewController.m</span><br><span class="line">&#x2F;&#x2F;  webviewDemo</span><br><span class="line">&#x2F;&#x2F;</span><br><span class="line">&#x2F;&#x2F;  Created by 孙天文 on 16&#x2F;11&#x2F;15.</span><br><span class="line">&#x2F;&#x2F;  Copyright © 2016年 孙天文. All rights reserved.</span><br><span class="line">&#x2F;&#x2F;</span><br><span class="line"></span><br><span class="line">#import &quot;ViewController.h&quot;</span><br><span class="line"></span><br><span class="line">@interface ViewController ()&lt;UIWebViewDelegate,JSExport&gt;</span><br><span class="line">    </span><br><span class="line">@property (strong,nonatomic) UIWebView *webView;</span><br><span class="line"> </span><br><span class="line"> &#x2F;&#x2F;JS运行环境   </span><br><span class="line">@property (strong,nonatomic) JSContext *jsContext;</span><br><span class="line"></span><br><span class="line">@end</span><br><span class="line"></span><br><span class="line">@implementation ViewController</span><br><span class="line"></span><br><span class="line">- (void)viewDidLoad &#123;</span><br><span class="line">    [super viewDidLoad];</span><br><span class="line">    </span><br><span class="line">    self.webView &#x3D; [[UIWebView alloc] initWithFrame:CGRectMake(0, 64, [UIScreen mainScreen].bounds.size.width, [UIScreen mainScreen].bounds.size.height)];</span><br><span class="line">    self.webView.delegate &#x3D; self;</span><br><span class="line">    </span><br><span class="line">    &#x2F;&#x2F;加载本地html文件</span><br><span class="line">    NSString *path &#x3D; [[NSBundle mainBundle] pathForResource:@&quot;test&quot; ofType:@&quot;html&quot;];</span><br><span class="line">    NSString *htmlString &#x3D; [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];</span><br><span class="line">    NSString *basePath &#x3D; [[NSBundle mainBundle] bundlePath];</span><br><span class="line">    NSURL *baseURL &#x3D; [NSURL fileURLWithPath:basePath];</span><br><span class="line">    </span><br><span class="line">    [self.webView loadHTMLString:htmlString baseURL:baseURL];</span><br><span class="line">    </span><br><span class="line">    [self.view addSubview:self.webView];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">&#x2F;&#x2F;网页加载前调用的方法</span><br><span class="line">- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType&#123;</span><br><span class="line">    </span><br><span class="line">    return YES;</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">&#x2F;&#x2F;开始加载</span><br><span class="line">- (void) webViewDidStartLoad:(UIWebView *)webView&#123;</span><br><span class="line">    NSLog(@&quot;start laod&quot;);</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">&#x2F;&#x2F;加载完成</span><br><span class="line">- (void) webViewDidFinishLoad:(UIWebView *)webView&#123;</span><br><span class="line">    self.jsContext &#x3D; [self.webView valueForKeyPath:@&quot;documentView.webView.mainFrame.javaScriptContext&quot;];</span><br><span class="line">    self.jsContext[@&quot;demoapi&quot;] &#x3D; self;</span><br><span class="line">    NSLog(@&quot;laod finish&quot;);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#x2F;&#x2F;加载出错</span><br><span class="line">- (void) webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error&#123;</span><br><span class="line">    NSLog(@&quot;load error %@&quot;,error);</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">&#x2F;&#x2F;执行JS方法</span><br><span class="line">- (void) doJavaScriptFunction:(NSString *)jsfunction&#123;</span><br><span class="line">    [self.jsContext evaluateScript:jsfunction];</span><br><span class="line">    </span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (void) sayHello&#123;</span><br><span class="line">    [self showAlertDesc:@&quot;hello world&quot;];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">- (void) setTitle:(NSString *)title&#123;</span><br><span class="line">    [self showAlertDesc:@&quot;setTitle&quot;];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">&#x2F;&#x2F;下面是大于等于两个参数的情况，要注意这个格式和JS中的格式对比    </span><br><span class="line">- (void) setTitle:(NSString *)title Left:(NSString *)leftTitle&#123;</span><br><span class="line">    [self showAlertDesc:@&quot;setTitleLeft&quot;];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">- (void) setTitle:(NSString *)title Left:(NSString *)leftTitle Right:(NSString *)rightTitle&#123;</span><br><span class="line">    [self showAlertDesc:@&quot;setTitleLeftRight&quot;];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">- (void) showAlertDesc:(NSString *)desc&#123;</span><br><span class="line">    UIAlertController *alertController  &#x3D; [UIAlertController alertControllerWithTitle:@&quot;&quot; message:desc preferredStyle:UIAlertControllerStyleAlert];</span><br><span class="line">    </span><br><span class="line">    UIAlertAction *okAction &#x3D; [UIAlertAction actionWithTitle:@&quot;OK&quot; style:UIAlertActionStyleDefault handler:nil];</span><br><span class="line">    [alertController addAction:okAction];</span><br><span class="line">    [self presentViewController:alertController animated:YES completion:nil];</span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line">- (void)didReceiveMemoryWarning &#123;</span><br><span class="line">    [super didReceiveMemoryWarning];</span><br><span class="line">    &#x2F;&#x2F; Dispose of any resources that can be recreated.</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">@end</span><br></pre></td></tr></table></figure>
+
+<p>test.html</p>
+<figure class="highlight html"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;!DOCTYPE <span class="meta-keyword">html</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">html</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">head</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">style</span>&gt;</span></span><br><span class="line">            .button&#123;</span><br><span class="line"><span class="css">                <span class="attribute">background-color</span>: <span class="number">#d9edf7</span><span class="meta">!important</span>;</span></span><br><span class="line"><span class="css">                <span class="attribute">display</span>:block;</span></span><br><span class="line"><span class="css">                <span class="attribute">margin-top</span>:<span class="number">40px</span>;</span></span><br><span class="line"><span class="css">                <span class="attribute">height</span>:<span class="number">30px</span>;</span></span><br><span class="line">            &#125;</span><br><span class="line">        <span class="tag">&lt;/<span class="name">style</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">head</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">body</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">a</span> <span class="attr">href</span> = <span class="string">&quot;#&quot;</span> <span class="attr">class</span> = <span class="string">&quot;button&quot;</span> <span class="attr">onclick</span> = <span class="string">&quot;sayHello()&quot;</span>&gt;</span>Say Hello<span class="tag">&lt;/<span class="name">a</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">a</span> <span class="attr">href</span> = <span class="string">&quot;#&quot;</span> <span class="attr">class</span> = <span class="string">&quot;button&quot;</span> <span class="attr">onclick</span> = <span class="string">&quot;setTitle()&quot;</span>&gt;</span>Set Title<span class="tag">&lt;/<span class="name">a</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">a</span> <span class="attr">href</span> = <span class="string">&quot;#&quot;</span> <span class="attr">class</span> = <span class="string">&quot;button&quot;</span> <span class="attr">onclick</span> = <span class="string">&quot;setTitle2()&quot;</span>&gt;</span>Set Title Left<span class="tag">&lt;/<span class="name">a</span>&gt;</span></span><br><span class="line">        <span class="tag">&lt;<span class="name">a</span> <span class="attr">href</span> = <span class="string">&quot;#&quot;</span> <span class="attr">class</span> = <span class="string">&quot;button&quot;</span> <span class="attr">onclick</span> = <span class="string">&quot;setTitle3()&quot;</span>&gt;</span>Set Title Left Right<span class="tag">&lt;/<span class="name">a</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">body</span>&gt;</span></span><br><span class="line">    </span><br><span class="line">    <span class="tag">&lt;<span class="name">script</span> <span class="attr">type</span>=<span class="string">&quot;text/javascript&quot;</span>&gt;</span></span><br><span class="line"><span class="javascript">        <span class="function"><span class="keyword">function</span> <span class="title">sayHello</span>(<span class="params"></span>)</span>&#123;</span></span><br><span class="line">            demoapi.sayHello();</span><br><span class="line">        &#125;</span><br><span class="line">    </span><br><span class="line"><span class="javascript">        <span class="function"><span class="keyword">function</span> <span class="title">setTitle</span>(<span class="params"></span>)</span>&#123;</span></span><br><span class="line"><span class="javascript">            demoapi.setTitle(<span class="string">&quot;Title1&quot;</span>);</span></span><br><span class="line">        &#125;</span><br><span class="line">    </span><br><span class="line"><span class="javascript">    	<span class="comment">//下面是大于等于两个参数的情况，要注意这个格式和JS中的格式对比</span></span></span><br><span class="line"><span class="javascript">        <span class="function"><span class="keyword">function</span> <span class="title">setTitle2</span>(<span class="params"></span>)</span>&#123;</span></span><br><span class="line"><span class="javascript">            demoapi.setTitleLeft(<span class="string">&quot;Title2&quot;</span>,<span class="string">&quot;LeftTitle2&quot;</span>);</span></span><br><span class="line">        &#125;</span><br><span class="line">    </span><br><span class="line"><span class="javascript">        <span class="function"><span class="keyword">function</span> <span class="title">setTitle3</span>(<span class="params"></span>)</span>&#123;</span></span><br><span class="line"><span class="javascript">            demoapi.setTitleLeftRight(<span class="string">&quot;Title3&quot;</span>,<span class="string">&quot;LeftTitle3&quot;</span>,<span class="string">&quot;RightTitle3&quot;</span>);</span></span><br><span class="line">        &#125;</span><br><span class="line">    <span class="tag">&lt;/<span class="name">script</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">html</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="WKWebView"><a href="#WKWebView" class="headerlink" title="WKWebView"></a>WKWebView</h2><p><a target="_blank" rel="noopener" href="https://developer.apple.com/reference/webkit/wkwebview">WKWebView</a>作为苹果官方推荐的Web控件，在UIWebView的基础上进行重构,加载速度和内存开销上都有很大的提升，当我们需要集成该控件时，需要去注意改控件提供和方法和<a target="_blank" rel="noopener" href="https://developer.apple.com/reference/uikit/uiwebview">UIWebView</a>的不同。需要注意一点，这个控件要求系统版本最低是IOS8，如果你的项目需要覆盖IOS8一下的用户的话，还是乖乖的去用<a target="_blank" rel="noopener" href="https://developer.apple.com/reference/uikit/uiwebview">UIWebView</a>吧。</p>
+<p>详细情况后续补充</p>
+<h2 id="SFSafariView"><a href="#SFSafariView" class="headerlink" title="SFSafariView"></a>SFSafariView</h2><p><a target="_blank" rel="noopener" href="https://developer.apple.com/reference/safariservices/sfsafariviewcontroller">SFSafariView</a>给人直观的印象是把Safari内嵌到了APP当中，目前笔者还没有接触过，这里就不在叙述更多的信息了，如果后面结果的话，会再写一篇博客进行详细说明。</p>
+
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/IOS/" rel="tag"># IOS</a>
+              <a href="/tags/UIWebView/" rel="tag"># UIWebView</a>
+              <a href="/tags/JS/" rel="tag"># JS</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2016/11/13/ios-framework-combine/" rel="prev" title="IOS动态库多个CPU架构合并">
+                  <i class="fa fa-chevron-left"></i> IOS动态库多个CPU架构合并
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2017/06/21/ngx-entry/" rel="next" title="Nginx源码解读-开篇">
+                  Nginx源码解读-开篇 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

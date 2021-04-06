@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="概述rio是redis实现的一个流式I&#x2F;O抽象，针对不同的输入&#x2F;输出(文件、内存、fd)，提供统一的读、写、查看offset等方法，在aof，rdb经常用到文件类型和内存内类。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="redis-rio">
+<meta property="og:url" content="http://suntw2015.github.io/2019/08/22/redis-rio/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="概述rio是redis实现的一个流式I&#x2F;O抽象，针对不同的输入&#x2F;输出(文件、内存、fd)，提供统一的读、写、查看offset等方法，在aof，rdb经常用到文件类型和内存内类。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-08-22T03:10:57.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.193Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="redis">
+<meta property="article:tag" content="rio">
+<meta property="article:tag" content="io">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2019/08/22/redis-rio/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>redis-rio | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">2.1.</span> <span class="nav-text">数据结构</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%80%9A%E7%94%A8%E6%8E%A5%E5%8F%A3"><span class="nav-number">2.2.</span> <span class="nav-text">通用接口</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#rioWrite"><span class="nav-number">2.2.1.</span> <span class="nav-text">rioWrite</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioRead"><span class="nav-number">2.2.2.</span> <span class="nav-text">rioRead</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioTell"><span class="nav-number">2.2.3.</span> <span class="nav-text">rioTell</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFlush"><span class="nav-number">2.2.4.</span> <span class="nav-text">rioFlush</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioGenericUpdateChecksum"><span class="nav-number">2.2.5.</span> <span class="nav-text">rioGenericUpdateChecksum</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioSetAutoSync"><span class="nav-number">2.2.6.</span> <span class="nav-text">rioSetAutoSync</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#AOF%E7%9B%B8%E5%85%B3"><span class="nav-number">2.2.7.</span> <span class="nav-text">AOF相关</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%86%85%E5%AD%98%E7%B1%BB%E5%9E%8B"><span class="nav-number">2.3.</span> <span class="nav-text">内存类型</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E5%BF%AB%E9%80%9F%E5%A1%AB%E5%85%85%E6%95%B0%E6%8D%AE"><span class="nav-number">2.3.1.</span> <span class="nav-text">快速填充数据</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioInitWithBuffer"><span class="nav-number">2.3.2.</span> <span class="nav-text">rioInitWithBuffer</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioBufferWrite"><span class="nav-number">2.3.3.</span> <span class="nav-text">rioBufferWrite</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioBufferRead"><span class="nav-number">2.3.4.</span> <span class="nav-text">rioBufferRead</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioBufferTell"><span class="nav-number">2.3.5.</span> <span class="nav-text">rioBufferTell</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioBufferFlush"><span class="nav-number">2.3.6.</span> <span class="nav-text">rioBufferFlush</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E7%B1%BB%E5%9E%8B"><span class="nav-number">2.4.</span> <span class="nav-text">文件类型</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E5%BF%AB%E9%80%9F%E5%A1%AB%E5%85%85%E6%95%B0%E6%8D%AE-1"><span class="nav-number">2.4.1.</span> <span class="nav-text">快速填充数据</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioInitWithFile"><span class="nav-number">2.4.2.</span> <span class="nav-text">rioInitWithFile</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFileWrite"><span class="nav-number">2.4.3.</span> <span class="nav-text">rioFileWrite</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFileRead"><span class="nav-number">2.4.4.</span> <span class="nav-text">rioFileRead</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFileTell"><span class="nav-number">2.4.5.</span> <span class="nav-text">rioFileTell</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFileFlush"><span class="nav-number">2.4.6.</span> <span class="nav-text">rioFileFlush</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#fd%E7%B1%BB%E5%9E%8B"><span class="nav-number">2.5.</span> <span class="nav-text">fd类型</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E5%BF%AB%E9%80%9F%E5%A1%AB%E5%85%85%E6%95%B0%E6%8D%AE-2"><span class="nav-number">2.5.1.</span> <span class="nav-text">快速填充数据</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioInitWithFdset"><span class="nav-number">2.5.2.</span> <span class="nav-text">rioInitWithFdset</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFdsetWrite"><span class="nav-number">2.5.3.</span> <span class="nav-text">rioFdsetWrite</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFdsetRead"><span class="nav-number">2.5.4.</span> <span class="nav-text">rioFdsetRead</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFdsetTell"><span class="nav-number">2.5.5.</span> <span class="nav-text">rioFdsetTell</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFdsetFlush"><span class="nav-number">2.5.6.</span> <span class="nav-text">rioFdsetFlush</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#rioFreeFdset"><span class="nav-number">2.5.7.</span> <span class="nav-text">rioFreeFdset</span></a></li></ol></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2019/08/22/redis-rio/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          redis-rio
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-08-22 11:10:57" itemprop="dateCreated datePublished" datetime="2019-08-22T11:10:57+08:00">2019-08-22</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>rio是redis实现的一个流式I/O抽象，针对不同的输入/输出(文件、内存、fd)，提供统一的读、写、查看offset等方法，在<code>aof</code>，<code>rdb</code>经常用到文件类型和内存内类。</p>
+<span id="more"></span>
+
+<h3 id="源码分析"><a href="#源码分析" class="headerlink" title="源码分析"></a>源码分析</h3><h4 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h4><p>从数据结构的union中可以看出，目前支持三种类型，<code>buffer</code>内存、<code>file</code>文件、<code>fdset</code>描述符集。提供通用的读、写、查看offst、数据flush、计算校验方法。</p>
+<blockquote>
+<p>buffer<br>内存类型，只有两个属性，数据块(动态字符串sds)和offset</p>
+</blockquote>
+<blockquote>
+<p>file<br>文件类型，包含<code>fd</code>、<code>buffered</code>、<code>autosync</code>三个属性。其中<code>buffered</code>、<code>autosync</code>是用来强制把数据flush到磁盘上的，<code>autosync</code>是指写入多少字节后执行flush，<code>buffered</code>则是记录上次flush后处理的字节数。</p>
+</blockquote>
+<blockquote>
+<p>fdset<br>fd集合类型，主要是管道或者socket，把内存块的数据依次写入集合中的每一个fd，失败的情况有且只有集合内所有的fd都失败。</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> _<span class="title">rio</span> &#123;</span></span><br><span class="line">    <span class="keyword">size_t</span> (*read)(struct _rio *, <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len); <span class="comment">// 读</span></span><br><span class="line">    <span class="keyword">size_t</span> (*write)(struct _rio *, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len); <span class="comment">//写</span></span><br><span class="line">    <span class="keyword">off_t</span> (*tell)(struct _rio *); <span class="comment">//查看offset</span></span><br><span class="line">    <span class="keyword">int</span> (*flush)(struct _rio *); <span class="comment">//数据flush</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">void</span> (*update_cksum)(struct _rio *, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len); <span class="comment">//计算数据校验</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">uint64_t</span> cksum; <span class="comment">//当前校验</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">size_t</span> processed_bytes; <span class="comment">//已处理的字节数(读/写)</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">size_t</span> max_processing_chunk; <span class="comment">//一次处理最大的数据量</span></span><br><span class="line"></span><br><span class="line">    <span class="class"><span class="keyword">union</span> &#123;</span></span><br><span class="line">        <span class="comment">/*  内存 */</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">            sds ptr; <span class="comment">//数据</span></span><br><span class="line">            <span class="keyword">off_t</span> pos; <span class="comment">//处理offset</span></span><br><span class="line">        &#125; buffer;</span><br><span class="line">        <span class="comment">/* 标准文件 */</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">            FILE *fp; <span class="comment">//文件句柄</span></span><br><span class="line">            <span class="keyword">off_t</span> buffered;  <span class="comment">//自从上次fsync后写入的字节数</span></span><br><span class="line">            <span class="keyword">off_t</span> autosync; <span class="comment">/* 当写入autosync字节后，开始执行fsync */</span></span><br><span class="line">        &#125; file;</span><br><span class="line">        <span class="comment">/* 多个fd socket */</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">            <span class="keyword">int</span> *fds;       <span class="comment">//文件描述符</span></span><br><span class="line">            <span class="keyword">int</span> *state;     <span class="comment">// fds对应的状态 0表示ok，其余error</span></span><br><span class="line">            <span class="keyword">int</span> numfds; <span class="comment">//fds数量</span></span><br><span class="line">            <span class="keyword">off_t</span> pos; <span class="comment">//数据处理offset</span></span><br><span class="line">            sds buf; <span class="comment">//操作的数据</span></span><br><span class="line">        &#125; fdset;</span><br><span class="line">    &#125; io;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h4 id="通用接口"><a href="#通用接口" class="headerlink" title="通用接口"></a>通用接口</h4><h5 id="rioWrite"><a href="#rioWrite" class="headerlink" title="rioWrite"></a>rioWrite</h5><p>通用的写接口</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">size_t</span> <span class="title">rioWrite</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">while</span> (len) &#123;</span><br><span class="line">	    <span class="comment">// 控制每次写入的大小</span></span><br><span class="line">        <span class="keyword">size_t</span> bytes_to_write = (r-&gt;max_processing_chunk &amp;&amp; r-&gt;max_processing_chunk &lt; len) ? r-&gt;max_processing_chunk : len;</span><br><span class="line">	    <span class="comment">//计算校验值</span></span><br><span class="line">        <span class="keyword">if</span> (r-&gt;update_cksum) r-&gt;update_cksum(r,buf,bytes_to_write);</span><br><span class="line">	    <span class="comment">//数据具体写入</span></span><br><span class="line">        <span class="keyword">if</span> (r-&gt;write(r,buf,bytes_to_write) == <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">	    <span class="comment">//移动写入指针和数据长度</span></span><br><span class="line">        buf = (<span class="keyword">char</span>*)buf + bytes_to_write;</span><br><span class="line">        len -= bytes_to_write;</span><br><span class="line">	    <span class="comment">//已处理字节数增加</span></span><br><span class="line">        r-&gt;processed_bytes += bytes_to_write;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioRead"><a href="#rioRead" class="headerlink" title="rioRead"></a>rioRead</h5><p>通用的读接口</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">size_t</span> <span class="title">rioRead</span><span class="params">(rio *r, <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">while</span> (len) &#123;</span><br><span class="line">	    <span class="comment">// 控制每次写入的大小</span></span><br><span class="line">        <span class="keyword">size_t</span> bytes_to_read = (r-&gt;max_processing_chunk &amp;&amp; r-&gt;max_processing_chunk &lt; len) ? r-&gt;max_processing_chunk : len;</span><br><span class="line">	    <span class="comment">//数据具体读取</span></span><br><span class="line">        <span class="keyword">if</span> (r-&gt;read(r,buf,bytes_to_read) == <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">	    <span class="comment">//计算校验值</span></span><br><span class="line">        <span class="keyword">if</span> (r-&gt;update_cksum) r-&gt;update_cksum(r,buf,bytes_to_read);</span><br><span class="line">	    <span class="comment">//移动读取指针和数据长度</span></span><br><span class="line">        buf = (<span class="keyword">char</span>*)buf + bytes_to_read;</span><br><span class="line">        len -= bytes_to_read;</span><br><span class="line">	    <span class="comment">//已处理字节数增加</span></span><br><span class="line">        r-&gt;processed_bytes += bytes_to_read;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioTell"><a href="#rioTell" class="headerlink" title="rioTell"></a>rioTell</h5><p>通用返回offset</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">off_t</span> <span class="title">rioTell</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> r-&gt;tell(r);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFlush"><a href="#rioFlush" class="headerlink" title="rioFlush"></a>rioFlush</h5><p>通用flush</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">int</span> <span class="title">rioFlush</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> r-&gt;flush(r);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioGenericUpdateChecksum"><a href="#rioGenericUpdateChecksum" class="headerlink" title="rioGenericUpdateChecksum"></a>rioGenericUpdateChecksum</h5><p>计算校验</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioGenericUpdateChecksum</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    r-&gt;cksum = crc64(r-&gt;cksum,buf,len);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioSetAutoSync"><a href="#rioSetAutoSync" class="headerlink" title="rioSetAutoSync"></a>rioSetAutoSync</h5><p>设置文件类型的autosync(写入多少字节后执行flush)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioSetAutoSync</span><span class="params">(rio *r, <span class="keyword">off_t</span> bytes)</span> </span>&#123;</span><br><span class="line">    serverAssert(r-&gt;read == rioFileIO.read);</span><br><span class="line">    r-&gt;io.file.autosync = bytes;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="AOF相关"><a href="#AOF相关" class="headerlink" title="AOF相关"></a>AOF相关</h5><p>因为aof操作也是写文件，所以在写文件的基础上，有一些特有的操作，如下</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 写bulkcount prefix为协议中的一种，详见redis协议，最终表现为 eg:*&lt;count&gt;\r\n *为prefix *5\r\n</span></span><br><span class="line"><span class="function"><span class="keyword">size_t</span> <span class="title">rioWriteBulkCount</span><span class="params">(rio *r, <span class="keyword">char</span> prefix, <span class="keyword">long</span> count)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">char</span> cbuf[<span class="number">128</span>];</span><br><span class="line">    <span class="keyword">int</span> clen;</span><br><span class="line"></span><br><span class="line">    cbuf[<span class="number">0</span>] = prefix;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 数字count转字符串</span></span><br><span class="line">    clen = <span class="number">1</span>+ll2string(cbuf+<span class="number">1</span>,<span class="keyword">sizeof</span>(cbuf)<span class="number">-1</span>,count);</span><br><span class="line">    cbuf[clen++] = <span class="string">&#x27;\r&#x27;</span>;</span><br><span class="line">    cbuf[clen++] = <span class="string">&#x27;\n&#x27;</span>;</span><br><span class="line">    <span class="keyword">if</span> (rioWrite(r,cbuf,clen) == <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">return</span> clen;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 写bulkstring 分三步，bulkstring组成详见redis协议</span></span><br><span class="line"><span class="function"><span class="keyword">size_t</span> <span class="title">rioWriteBulkString</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">char</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">size_t</span> nwritten;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// step1 先写 bulkstring开始 $&lt;len&gt;\r\n</span></span><br><span class="line">    <span class="keyword">if</span> ((nwritten = rioWriteBulkCount(r,<span class="string">&#x27;$&#x27;</span>,len)) == <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// step2 再写中间真正字符串内容</span></span><br><span class="line">    <span class="keyword">if</span> (len &gt; <span class="number">0</span> &amp;&amp; rioWrite(r,buf,len) == <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//step3 写结尾的\r\n</span></span><br><span class="line">    <span class="keyword">if</span> (rioWrite(r,<span class="string">&quot;\r\n&quot;</span>,<span class="number">2</span>) == <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">return</span> nwritten+len+<span class="number">2</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// longlong当 bulkstring 写入</span></span><br><span class="line"><span class="function"><span class="keyword">size_t</span> <span class="title">rioWriteBulkLongLong</span><span class="params">(rio *r, <span class="keyword">long</span> <span class="keyword">long</span> l)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">char</span> lbuf[<span class="number">32</span>];</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> llen;</span><br><span class="line"></span><br><span class="line">    llen = ll2string(lbuf,<span class="keyword">sizeof</span>(lbuf),l);</span><br><span class="line">    <span class="keyword">return</span> rioWriteBulkString(r,lbuf,llen);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// double 当 bulkstring 写入</span></span><br><span class="line"><span class="function"><span class="keyword">size_t</span> <span class="title">rioWriteBulkDouble</span><span class="params">(rio *r, <span class="keyword">double</span> d)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">char</span> dbuf[<span class="number">128</span>];</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> dlen;</span><br><span class="line"></span><br><span class="line">    dlen = <span class="built_in">snprintf</span>(dbuf,<span class="keyword">sizeof</span>(dbuf),<span class="string">&quot;%.17g&quot;</span>,d);</span><br><span class="line">    <span class="keyword">return</span> rioWriteBulkString(r,dbuf,dlen);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="内存类型"><a href="#内存类型" class="headerlink" title="内存类型"></a>内存类型</h4><h5 id="快速填充数据"><a href="#快速填充数据" class="headerlink" title="快速填充数据"></a>快速填充数据</h5><p>快速填充rio结构体用到的数据，指定内存类型的读方法、写方法、tell方法、flush方法，其余的都为空</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> rio rioBufferIO = &#123;</span><br><span class="line">    rioBufferRead,</span><br><span class="line">    rioBufferWrite,</span><br><span class="line">    rioBufferTell,</span><br><span class="line">    rioBufferFlush,</span><br><span class="line">    <span class="literal">NULL</span>,           <span class="comment">/* update_checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* current checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* bytes read or written */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* read/write chunk size */</span></span><br><span class="line">    &#123; &#123; <span class="literal">NULL</span>, <span class="number">0</span> &#125; &#125; <span class="comment">/* union for io-specific vars */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioInitWithBuffer"><a href="#rioInitWithBuffer" class="headerlink" title="rioInitWithBuffer"></a>rioInitWithBuffer</h5><p>初始化，使用内存快速填充数据给rio的各个字段赋值，指定操作内存数据源为s</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioInitWithBuffer</span><span class="params">(rio *r, sds s)</span> </span>&#123;</span><br><span class="line">    *r = rioBufferIO;</span><br><span class="line">    r-&gt;io.buffer.ptr = s;</span><br><span class="line">    r-&gt;io.buffer.pos = <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioBufferWrite"><a href="#rioBufferWrite" class="headerlink" title="rioBufferWrite"></a>rioBufferWrite</h5><p>写操作，把要写入的数据追加到原有sds后面</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioBufferWrite</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    r-&gt;io.buffer.ptr = sdscatlen(r-&gt;io.buffer.ptr,(<span class="keyword">char</span>*)buf,len);</span><br><span class="line">    r-&gt;io.buffer.pos += len;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioBufferRead"><a href="#rioBufferRead" class="headerlink" title="rioBufferRead"></a>rioBufferRead</h5><p>读操作，剩余长度不满足读取长度len时直接返回错误，正常情况从offset位置 开始往buf里拷贝len长度</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioBufferRead</span><span class="params">(rio *r, <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (sdslen(r-&gt;io.buffer.ptr)-r-&gt;io.buffer.pos &lt; len)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>; <span class="comment">/* not enough buffer to return len bytes. */</span></span><br><span class="line">    <span class="built_in">memcpy</span>(buf,r-&gt;io.buffer.ptr+r-&gt;io.buffer.pos,len);</span><br><span class="line">    r-&gt;io.buffer.pos += len;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioBufferTell"><a href="#rioBufferTell" class="headerlink" title="rioBufferTell"></a>rioBufferTell</h5><p>返回offset</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">off_t</span> <span class="title">rioBufferTell</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> r-&gt;io.buffer.pos;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioBufferFlush"><a href="#rioBufferFlush" class="headerlink" title="rioBufferFlush"></a>rioBufferFlush</h5><p>数据落实flush，由于操作的对象是内存，不存在flush这一说</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">int</span> <span class="title">rioBufferFlush</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    UNUSED(r);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="文件类型"><a href="#文件类型" class="headerlink" title="文件类型"></a>文件类型</h4><h5 id="快速填充数据-1"><a href="#快速填充数据-1" class="headerlink" title="快速填充数据"></a>快速填充数据</h5><p>快速填充rio结构体用到的数据，指定文件类型的读方法、写方法、tell方法、flush方法，其余的都为空</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> rio rioFileIO = &#123;</span><br><span class="line">    rioFileRead,</span><br><span class="line">    rioFileWrite,</span><br><span class="line">    rioFileTell,</span><br><span class="line">    rioFileFlush,</span><br><span class="line">    <span class="literal">NULL</span>,           <span class="comment">/* update_checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* current checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* bytes read or written */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* read/write chunk size */</span></span><br><span class="line">    &#123; &#123; <span class="literal">NULL</span>, <span class="number">0</span> &#125; &#125; <span class="comment">/* union for io-specific vars */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioInitWithFile"><a href="#rioInitWithFile" class="headerlink" title="rioInitWithFile"></a>rioInitWithFile</h5><p>初始化，使用文件快速填充数据给rio的各个字段赋值，指定操作文件为fp</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioInitWithFile</span><span class="params">(rio *r, FILE *fp)</span> </span>&#123;</span><br><span class="line">    *r = rioFileIO;</span><br><span class="line">    r-&gt;io.file.fp = fp;</span><br><span class="line">    r-&gt;io.file.buffered = <span class="number">0</span>;</span><br><span class="line">    r-&gt;io.file.autosync = <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFileWrite"><a href="#rioFileWrite" class="headerlink" title="rioFileWrite"></a>rioFileWrite</h5><p>写操作，往文件写入buf数据，并flush</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioFileWrite</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">size_t</span> retval;</span><br><span class="line"></span><br><span class="line">    retval = fwrite(buf,len,<span class="number">1</span>,r-&gt;io.file.fp);</span><br><span class="line">    r-&gt;io.file.buffered += len;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 如果从上次fsync之后写入的大小达到了autosync，这时候需要执行flush操作</span></span><br><span class="line">    <span class="keyword">if</span> (r-&gt;io.file.autosync &amp;&amp;</span><br><span class="line">        r-&gt;io.file.buffered &gt;= r-&gt;io.file.autosync)</span><br><span class="line">    &#123;</span><br><span class="line">	    <span class="comment">//强制把缓冲区内容写入磁盘</span></span><br><span class="line">        fflush(r-&gt;io.file.fp);</span><br><span class="line">	    <span class="comment">//更新文件的修改时间</span></span><br><span class="line">        redis_fsync(fileno(r-&gt;io.file.fp));</span><br><span class="line">        r-&gt;io.file.buffered = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> retval;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFileRead"><a href="#rioFileRead" class="headerlink" title="rioFileRead"></a>rioFileRead</h5><p>读操作，从文件读取数据，存入buf中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioFileRead</span><span class="params">(rio *r, <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> fread(buf,len,<span class="number">1</span>,r-&gt;io.file.fp);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFileTell"><a href="#rioFileTell" class="headerlink" title="rioFileTell"></a>rioFileTell</h5><p>返回位置offset</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">off_t</span> <span class="title">rioFileTell</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> ftello(r-&gt;io.file.fp);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFileFlush"><a href="#rioFileFlush" class="headerlink" title="rioFileFlush"></a>rioFileFlush</h5><p>flush数据到磁盘</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">int</span> <span class="title">rioFileFlush</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> (fflush(r-&gt;io.file.fp) == <span class="number">0</span>) ? <span class="number">1</span> : <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="fd类型"><a href="#fd类型" class="headerlink" title="fd类型"></a>fd类型</h4><h5 id="快速填充数据-2"><a href="#快速填充数据-2" class="headerlink" title="快速填充数据"></a>快速填充数据</h5><p>快速填充rio结构体用到的数据，指定fd类型的读方法、写方法、tell方法、flush方法，其余的都为空</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> rio rioFdsetIO = &#123;</span><br><span class="line">    rioFdsetRead,</span><br><span class="line">    rioFdsetWrite,</span><br><span class="line">    rioFdsetTell,</span><br><span class="line">    rioFdsetFlush,</span><br><span class="line">    <span class="literal">NULL</span>,           <span class="comment">/* update_checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* current checksum */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* bytes read or written */</span></span><br><span class="line">    <span class="number">0</span>,              <span class="comment">/* read/write chunk size */</span></span><br><span class="line">    &#123; &#123; <span class="literal">NULL</span>, <span class="number">0</span> &#125; &#125; <span class="comment">/* union for io-specific vars */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioInitWithFdset"><a href="#rioInitWithFdset" class="headerlink" title="rioInitWithFdset"></a>rioInitWithFdset</h5><p>初始化，使用fd快速填充数据给rio的各个字段赋值，使用参数fds填充rio的fd</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioInitWithFdset</span><span class="params">(rio *r, <span class="keyword">int</span> *fds, <span class="keyword">int</span> numfds)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">    *r = rioFdsetIO;</span><br><span class="line">    r-&gt;io.fdset.fds = zmalloc(<span class="keyword">sizeof</span>(<span class="keyword">int</span>)*numfds);</span><br><span class="line">    r-&gt;io.fdset.state = zmalloc(<span class="keyword">sizeof</span>(<span class="keyword">int</span>)*numfds);</span><br><span class="line">    <span class="built_in">memcpy</span>(r-&gt;io.fdset.fds,fds,<span class="keyword">sizeof</span>(<span class="keyword">int</span>)*numfds);</span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; numfds; j++) r-&gt;io.fdset.state[j] = <span class="number">0</span>;</span><br><span class="line">    r-&gt;io.fdset.numfds = numfds;</span><br><span class="line">    r-&gt;io.fdset.pos = <span class="number">0</span>;</span><br><span class="line">    r-&gt;io.fdset.buf = sdsempty();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFdsetWrite"><a href="#rioFdsetWrite" class="headerlink" title="rioFdsetWrite"></a>rioFdsetWrite</h5><p>写数据，往rio的fd集合中的每一个fd写入长度为len的数据，数据为buf，如果在这些fds集合中的有一个成功了，整个方法就算是成功。如果buf为NULL并且len为0，会去看rio的buf中是否还有未处理的数据，有的话就处理，这种情况下就相当于flush的功能了</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioFdsetWrite</span><span class="params">(rio *r, <span class="keyword">const</span> <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">ssize_t</span> retval;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *p = (<span class="keyword">unsigned</span> <span class="keyword">char</span>*) buf;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 是否是flush</span></span><br><span class="line">    <span class="keyword">int</span> doflush = (buf == <span class="literal">NULL</span> &amp;&amp; len == <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 把buf内容追加到rio.fd.buf中，如果rio.fd.buf内容超出PROTO_IOBUF_LEN大小，flush也为1</span></span><br><span class="line">    <span class="keyword">if</span> (len) &#123;</span><br><span class="line">        r-&gt;io.fdset.buf = sdscatlen(r-&gt;io.fdset.buf,buf,len);</span><br><span class="line">        len = <span class="number">0</span>; <span class="comment">/* Prevent entering the while below if we don&#x27;t flush. */</span></span><br><span class="line">        <span class="keyword">if</span> (sdslen(r-&gt;io.fdset.buf) &gt; PROTO_IOBUF_LEN) doflush = <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果flush为1，重定向写数据的开始点为rio.fd.buf</span></span><br><span class="line">    <span class="keyword">if</span> (doflush) &#123;</span><br><span class="line">        p = (<span class="keyword">unsigned</span> <span class="keyword">char</span>*) r-&gt;io.fdset.buf;</span><br><span class="line">        len = sdslen(r-&gt;io.fdset.buf);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 分块发送最大1024字节</span></span><br><span class="line">    <span class="keyword">while</span>(len) &#123;</span><br><span class="line">        <span class="keyword">size_t</span> count = len &lt; <span class="number">1024</span> ? len : <span class="number">1024</span>;</span><br><span class="line">        <span class="keyword">int</span> broken = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">	    <span class="comment">// 跳过fds结合中error的fd</span></span><br><span class="line">        <span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; r-&gt;io.fdset.numfds; j++) &#123;</span><br><span class="line">            <span class="keyword">if</span> (r-&gt;io.fdset.state[j] != <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="comment">/* Skip FDs alraedy in error. */</span></span><br><span class="line">                broken++;</span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">	        <span class="comment">// 写数据</span></span><br><span class="line">            <span class="keyword">size_t</span> nwritten = <span class="number">0</span>;</span><br><span class="line">            <span class="keyword">while</span>(nwritten != count) &#123;</span><br><span class="line">                retval = write(r-&gt;io.fdset.fds[j],p+nwritten,count-nwritten);</span><br><span class="line">                <span class="keyword">if</span> (retval &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">                    <span class="keyword">if</span> (retval == <span class="number">-1</span> &amp;&amp; errno == EWOULDBLOCK) errno = ETIMEDOUT;</span><br><span class="line">                    <span class="keyword">break</span>;</span><br><span class="line">                &#125;</span><br><span class="line">                nwritten += retval;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">	        <span class="comment">// 更新fd状态error</span></span><br><span class="line">            <span class="keyword">if</span> (nwritten != count) &#123;</span><br><span class="line">                <span class="comment">/* Mark this FD as broken. */</span></span><br><span class="line">                r-&gt;io.fdset.state[j] = errno;</span><br><span class="line">                <span class="keyword">if</span> (r-&gt;io.fdset.state[j] == <span class="number">0</span>) r-&gt;io.fdset.state[j] = EIO;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">	    <span class="comment">// 如果所有的fd都error了 整个方法返回0(error)</span></span><br><span class="line">        <span class="keyword">if</span> (broken == r-&gt;io.fdset.numfds) <span class="keyword">return</span> <span class="number">0</span>; <span class="comment">/* All the FDs in error. */</span></span><br><span class="line"></span><br><span class="line">	    <span class="comment">//移动发送数据指针</span></span><br><span class="line">        p += count;</span><br><span class="line">        len -= count;</span><br><span class="line">	</span><br><span class="line">	    <span class="comment">// 处理rio处理offset</span></span><br><span class="line">        r-&gt;io.fdset.pos += count;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 执行flush</span></span><br><span class="line">    <span class="keyword">if</span> (doflush) sdsclear(r-&gt;io.fdset.buf);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h5 id="rioFdsetRead"><a href="#rioFdsetRead" class="headerlink" title="rioFdsetRead"></a>rioFdsetRead</h5><p>该方法没有实际操作</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">size_t</span> <span class="title">rioFdsetRead</span><span class="params">(rio *r, <span class="keyword">void</span> *buf, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    UNUSED(r);</span><br><span class="line">    UNUSED(buf);</span><br><span class="line">    UNUSED(len);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>; <span class="comment">/* Error, this target does not support reading. */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFdsetTell"><a href="#rioFdsetTell" class="headerlink" title="rioFdsetTell"></a>rioFdsetTell</h5><p>返回位置offset</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">off_t</span> <span class="title">rioFdsetTell</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> r-&gt;io.fdset.pos;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFdsetFlush"><a href="#rioFdsetFlush" class="headerlink" title="rioFdsetFlush"></a>rioFdsetFlush</h5><p>flush数据</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">int</span> <span class="title">rioFdsetFlush</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> rioFdsetWrite(r,<span class="literal">NULL</span>,<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="rioFreeFdset"><a href="#rioFreeFdset" class="headerlink" title="rioFreeFdset"></a>rioFreeFdset</h5><p>释放fdset</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">rioFreeFdset</span><span class="params">(rio *r)</span> </span>&#123;</span><br><span class="line">    zfree(r-&gt;io.fdset.fds);</span><br><span class="line">    zfree(r-&gt;io.fdset.state);</span><br><span class="line">    sdsfree(r-&gt;io.fdset.buf);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/redis/" rel="tag"># redis</a>
+              <a href="/tags/rio/" rel="tag"># rio</a>
+              <a href="/tags/io/" rel="tag"># io</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2019/08/21/redis-aof/" rel="prev" title="redis-aof">
+                  <i class="fa fa-chevron-left"></i> redis-aof
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2019/09/06/redis-rdb/" rel="next" title="redis-rdb">
+                  redis-rdb <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

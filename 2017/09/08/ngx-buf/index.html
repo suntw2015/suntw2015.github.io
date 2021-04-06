@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="前言在Nginx的源码的src&#x2F;core&#x2F;ngx_buf.c|h文件中我们可以看到两中数据结构，一个是ngx_buf_t,另一个是ngx_chain_t。ngx_buf_t是一个数据存储的结构体，在链表中用来保存节点的数据。这个数据可以是内存中的某一段，也可以是文件中的某一段内容。ngx_chain_t结构体则表示链表。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Nginx源码解读-链表、buf">
+<meta property="og:url" content="http://suntw2015.github.io/2017/09/08/ngx-buf/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="前言在Nginx的源码的src&#x2F;core&#x2F;ngx_buf.c|h文件中我们可以看到两中数据结构，一个是ngx_buf_t,另一个是ngx_chain_t。ngx_buf_t是一个数据存储的结构体，在链表中用来保存节点的数据。这个数据可以是内存中的某一段，也可以是文件中的某一段内容。ngx_chain_t结构体则表示链表。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2017-09-08T02:27:27.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.178Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="nginx">
+<meta property="article:tag" content="buf">
+<meta property="article:tag" content="chain">
+<meta property="article:tag" content="链表">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2017/09/08/ngx-buf/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>Nginx源码解读-链表、buf | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%82%A8%E5%A4%87%E7%9F%A5%E8%AF%86"><span class="nav-number">2.</span> <span class="nav-text">储备知识</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E5%AE%9A%E4%B9%89"><span class="nav-number">3.</span> <span class="nav-text">数据结构定义</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-buf-t"><span class="nav-number">3.1.</span> <span class="nav-text">ngx_buf_t</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-chain-t"><span class="nav-number">3.2.</span> <span class="nav-text">ngx_chain_t</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E6%96%B9%E6%B3%95"><span class="nav-number">4.</span> <span class="nav-text">主要方法</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-buf-size"><span class="nav-number">4.1.</span> <span class="nav-text">ngx_buf_size</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-free-chain"><span class="nav-number">4.2.</span> <span class="nav-text">ngx_free_chain</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-create-temp-buf"><span class="nav-number">4.3.</span> <span class="nav-text">ngx_create_temp_buf</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-alloc-chain-link"><span class="nav-number">4.4.</span> <span class="nav-text">ngx_alloc_chain_link</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-create-chain-of-bufs"><span class="nav-number">4.5.</span> <span class="nav-text">ngx_create_chain_of_bufs</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-chain-add-copy"><span class="nav-number">4.6.</span> <span class="nav-text">ngx_chain_add_copy</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-chain-get-free-buf"><span class="nav-number">4.7.</span> <span class="nav-text">ngx_chain_get_free_buf</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-chain-update-chains"><span class="nav-number">4.8.</span> <span class="nav-text">ngx_chain_update_chains</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-chain-update-sent"><span class="nav-number">4.9.</span> <span class="nav-text">ngx_chain_update_sent</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2017/09/08/ngx-buf/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Nginx源码解读-链表、buf
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2017-09-08 10:27:27" itemprop="dateCreated datePublished" datetime="2017-09-08T10:27:27+08:00">2017-09-08</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/nginx/" itemprop="url" rel="index"><span itemprop="name">nginx</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>在Nginx的源码的<code>src/core/ngx_buf.c|h</code>文件中我们可以看到两中数据结构，一个是<code>ngx_buf_t</code>,另一个是<code>ngx_chain_t</code>。<code>ngx_buf_t</code>是一个数据存储的结构体，在链表中用来保存节点的数据。这个数据可以是内存中的某一段，也可以是文件中的某一段内容。<code>ngx_chain_t</code>结构体则表示链表。</p>
+<span id="more"></span>
+
+<h3 id="储备知识"><a href="#储备知识" class="headerlink" title="储备知识"></a>储备知识</h3><ul>
+<li><a href="/2017/06/30/ngx-array/" title="Nginx内存管理">Nginx内存管理</a></li>
+</ul>
+<h3 id="数据结构定义"><a href="#数据结构定义" class="headerlink" title="数据结构定义"></a>数据结构定义</h3><h4 id="ngx-buf-t"><a href="#ngx-buf-t" class="headerlink" title="ngx_buf_t"></a>ngx_buf_t</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">ngx_buf_s</span>  <span class="title">ngx_buf_t</span>;</span></span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">ngx_buf_s</span> &#123;</span></span><br><span class="line">    <span class="comment">//内存数据真实开始位置</span></span><br><span class="line">    u_char          *pos;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//内存数据真实结束位置</span></span><br><span class="line">    u_char          *last;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//文件数据开始位置偏移量</span></span><br><span class="line">    <span class="keyword">off_t</span>            file_pos;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//文件数据结束位置偏移量</span></span><br><span class="line">    <span class="keyword">off_t</span>            file_last;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//内存数据开始位置(可用)</span></span><br><span class="line">    u_char          *start;         <span class="comment">/* start of buffer */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">//内存数据结束位置(可用)</span></span><br><span class="line">    u_char          *end;           <span class="comment">/* end of buffer */</span></span><br><span class="line">    <span class="keyword">ngx_buf_tag_t</span>    tag;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//文件数据所在的文件</span></span><br><span class="line">    <span class="keyword">ngx_file_t</span>      *file;</span><br><span class="line">    <span class="keyword">ngx_buf_t</span>       *shadow;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* the buf&#x27;s content could be changed */</span></span><br><span class="line">    <span class="comment">/* 缓冲区的内容是否可以更改 限制最大值为1 */</span></span><br><span class="line">    <span class="keyword">unsigned</span>         temporary:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     * the buf&#x27;s content is in a memory cache or in a read only memory</span></span><br><span class="line"><span class="comment">     * and must not be changed</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">//数据是否在内存中 </span></span><br><span class="line">    <span class="keyword">unsigned</span>         memory:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* the buf&#x27;s content is mmap()ed and must not be changed */</span></span><br><span class="line">    <span class="keyword">unsigned</span>         mmap:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//是否可以回收</span></span><br><span class="line">    <span class="keyword">unsigned</span>         recycled:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//数据是否在文件中</span></span><br><span class="line">    <span class="keyword">unsigned</span>         in_file:<span class="number">1</span>;</span><br><span class="line">    <span class="keyword">unsigned</span>         flush:<span class="number">1</span>;</span><br><span class="line">    <span class="keyword">unsigned</span>         sync:<span class="number">1</span>;</span><br><span class="line">    <span class="keyword">unsigned</span>         last_buf:<span class="number">1</span>;</span><br><span class="line">    <span class="keyword">unsigned</span>         last_in_chain:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">unsigned</span>         last_shadow:<span class="number">1</span>;</span><br><span class="line">    <span class="keyword">unsigned</span>         temp_file:<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* STUB */</span> <span class="keyword">int</span>   num;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<h4 id="ngx-chain-t"><a href="#ngx-chain-t" class="headerlink" title="ngx_chain_t"></a>ngx_chain_t</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">ngx_chain_s</span>           <span class="title">ngx_chain_t</span>;</span></span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">ngx_chain_s</span> &#123;</span></span><br><span class="line">    <span class="keyword">ngx_buf_t</span>    *buf;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *next;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="主要方法"><a href="#主要方法" class="headerlink" title="主要方法"></a>主要方法</h3><h4 id="ngx-buf-size"><a href="#ngx-buf-size" class="headerlink" title="ngx_buf_size"></a>ngx_buf_size</h4><p>获取buf所指向数据的大小</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_buf_size(b)                                                      \</span></span><br><span class="line">    (ngx_buf_in_memory(b) ? (<span class="keyword">off_t</span>) (b-&gt;last - b-&gt;pos):                      \</span><br><span class="line">                            (b-&gt;file_last - b-&gt;file_pos))</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-free-chain"><a href="#ngx-free-chain" class="headerlink" title="ngx_free_chain"></a>ngx_free_chain</h4><p>释放链表，将链表放到内存池的空闲链表上，后续可以复用</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_free_chain(pool, cl)                                             \</span></span><br><span class="line">    cl-&gt;next = pool-&gt;chain;                                                  \</span><br><span class="line">    pool-&gt;chain = cl</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-create-temp-buf"><a href="#ngx-create-temp-buf" class="headerlink" title="ngx_create_temp_buf"></a>ngx_create_temp_buf</h4><p>创建并返回一个buf，数据是在内存中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_buf_t</span> *</span><br><span class="line">ngx_create_temp_buf(<span class="keyword">ngx_pool_t</span> *pool, <span class="keyword">size_t</span> size)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_buf_t</span> *b;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 创建buf结构体 */</span></span><br><span class="line">    b = ngx_calloc_buf(pool);</span><br><span class="line">    <span class="keyword">if</span> (b == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 申请buf指向的内存空间 */</span></span><br><span class="line">    b-&gt;start = ngx_palloc(pool, size);</span><br><span class="line">    <span class="keyword">if</span> (b-&gt;start == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     * set by ngx_calloc_buf():</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     *     b-&gt;file_pos = 0;</span></span><br><span class="line"><span class="comment">     *     b-&gt;file_last = 0;</span></span><br><span class="line"><span class="comment">     *     b-&gt;file = NULL;</span></span><br><span class="line"><span class="comment">     *     b-&gt;shadow = NULL;</span></span><br><span class="line"><span class="comment">     *     b-&gt;tag = 0;</span></span><br><span class="line"><span class="comment">     *     and flags</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line"></span><br><span class="line">    b-&gt;pos = b-&gt;start;</span><br><span class="line">    b-&gt;last = b-&gt;start;</span><br><span class="line">    b-&gt;end = b-&gt;last + size;</span><br><span class="line">    b-&gt;temporary = <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> b;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-alloc-chain-link"><a href="#ngx-alloc-chain-link" class="headerlink" title="ngx_alloc_chain_link"></a>ngx_alloc_chain_link</h4><p>创建链表，优先从内存池的可复用链表中取，这里说明了<code>ngx_free_chain</code>中为什么把要释放的链表挂载到内存池的可复用链表中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_chain_t</span> *</span><br><span class="line">ngx_alloc_chain_link(<span class="keyword">ngx_pool_t</span> *pool)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *cl;</span><br><span class="line"></span><br><span class="line">    cl = pool-&gt;chain;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 优先从内存池挂载的chain取复用的 */</span></span><br><span class="line">    <span class="keyword">if</span> (cl) &#123;</span><br><span class="line">        pool-&gt;chain = cl-&gt;next;</span><br><span class="line">        <span class="keyword">return</span> cl;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 没有可复用的，只能去创建了 */</span></span><br><span class="line">    cl = ngx_palloc(pool, <span class="keyword">sizeof</span>(<span class="keyword">ngx_chain_t</span>));</span><br><span class="line">    <span class="keyword">if</span> (cl == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> cl;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-create-chain-of-bufs"><a href="#ngx-create-chain-of-bufs" class="headerlink" title="ngx_create_chain_of_bufs"></a>ngx_create_chain_of_bufs</h4><p>创建多个节点的链表，bufs结构中指定了节点的数量和每个节点buf的大小</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_chain_t</span> *</span><br><span class="line">ngx_create_chain_of_bufs(<span class="keyword">ngx_pool_t</span> *pool, <span class="keyword">ngx_bufs_t</span> *bufs)</span><br><span class="line">&#123;</span><br><span class="line">    u_char       *p;</span><br><span class="line">    <span class="keyword">ngx_int_t</span>     i;</span><br><span class="line">    <span class="keyword">ngx_buf_t</span>    *b;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *chain, *cl, **ll;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 申请内存，用来存储每个节点buf所指向的内容 */</span></span><br><span class="line">    p = ngx_palloc(pool, bufs-&gt;num * bufs-&gt;size);</span><br><span class="line">    <span class="keyword">if</span> (p == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    ll = &amp;chain;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 依次创建每个节点 */</span></span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; bufs-&gt;num; i++) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 先创建buf结构体 */</span></span><br><span class="line">        b = ngx_calloc_buf(pool);</span><br><span class="line">        <span class="keyword">if</span> (b == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * set by ngx_calloc_buf():</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         *     b-&gt;file_pos = 0;</span></span><br><span class="line"><span class="comment">         *     b-&gt;file_last = 0;</span></span><br><span class="line"><span class="comment">         *     b-&gt;file = NULL;</span></span><br><span class="line"><span class="comment">         *     b-&gt;shadow = NULL;</span></span><br><span class="line"><span class="comment">         *     b-&gt;tag = 0;</span></span><br><span class="line"><span class="comment">         *     and flags</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 初始化buf结构体 */</span></span><br><span class="line">        b-&gt;pos = p;</span><br><span class="line">        b-&gt;last = p;</span><br><span class="line">        b-&gt;temporary = <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">        b-&gt;start = p;</span><br><span class="line">        p += bufs-&gt;size;</span><br><span class="line">        b-&gt;end = p;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 再创建chain */</span></span><br><span class="line">        cl = ngx_alloc_chain_link(pool);</span><br><span class="line">        <span class="keyword">if</span> (cl == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 将buf挂载到chain上 */</span></span><br><span class="line">        cl-&gt;buf = b;</span><br><span class="line">        *ll = cl;</span><br><span class="line">        ll = &amp;cl-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 链表最后节点next 设置成null */</span></span><br><span class="line">    *ll = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> chain;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-chain-add-copy"><a href="#ngx-chain-add-copy" class="headerlink" title="ngx_chain_add_copy"></a>ngx_chain_add_copy</h4><p>拷贝链表(in)并将其增加到另一个链表(chain)的尾端</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_chain_add_copy(<span class="keyword">ngx_pool_t</span> *pool, <span class="keyword">ngx_chain_t</span> **chain, <span class="keyword">ngx_chain_t</span> *in)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *cl, **ll;</span><br><span class="line"></span><br><span class="line">    ll = chain;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 获取目的链表最后一个节点 ll保存的是最后一个节点next的地址 用于接下来追加 */</span></span><br><span class="line">    <span class="keyword">for</span> (cl = *chain; cl; cl = cl-&gt;next) &#123;</span><br><span class="line">        ll = &amp;cl-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 拷贝并添加 */</span></span><br><span class="line">    <span class="keyword">while</span> (in) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 创建单个链表 */</span></span><br><span class="line">        cl = ngx_alloc_chain_link(pool);</span><br><span class="line">        <span class="keyword">if</span> (cl == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> NGX_ERROR;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 复制buf指向地址 */</span></span><br><span class="line">        cl-&gt;buf = in-&gt;buf;</span><br><span class="line">        *ll = cl;</span><br><span class="line">        ll = &amp;cl-&gt;next;</span><br><span class="line">        in = in-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 链表最后节点next 设置成null */</span></span><br><span class="line">    *ll = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> NGX_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-chain-get-free-buf"><a href="#ngx-chain-get-free-buf" class="headerlink" title="ngx_chain_get_free_buf"></a>ngx_chain_get_free_buf</h4><p>获取一个buf指向内容为空的链表，会先从free(已经用完的链表)链表中去拿，否则新建</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_chain_t</span> *</span><br><span class="line">ngx_chain_get_free_buf(<span class="keyword">ngx_pool_t</span> *p, <span class="keyword">ngx_chain_t</span> **<span class="built_in">free</span>)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *cl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 尝试从现有的free链表中取获取 */</span></span><br><span class="line">    <span class="keyword">if</span> (*<span class="built_in">free</span>) &#123;</span><br><span class="line">        cl = *<span class="built_in">free</span>;</span><br><span class="line">        *<span class="built_in">free</span> = cl-&gt;next;</span><br><span class="line">        cl-&gt;next = <span class="literal">NULL</span>;</span><br><span class="line">        <span class="keyword">return</span> cl;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 创建新的链表 */</span></span><br><span class="line">    cl = ngx_alloc_chain_link(p);</span><br><span class="line">    <span class="keyword">if</span> (cl == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    cl-&gt;buf = ngx_calloc_buf(p);</span><br><span class="line">    <span class="keyword">if</span> (cl-&gt;buf == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    cl-&gt;next = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> cl;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-chain-update-chains"><a href="#ngx-chain-update-chains" class="headerlink" title="ngx_chain_update_chains"></a>ngx_chain_update_chains</h4><p>清理链表，释放buf已经处理完成的链表</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span></span><br><span class="line">ngx_chain_update_chains(<span class="keyword">ngx_pool_t</span> *p, <span class="keyword">ngx_chain_t</span> **<span class="built_in">free</span>, <span class="keyword">ngx_chain_t</span> **busy,</span><br><span class="line">    <span class="keyword">ngx_chain_t</span> **out, <span class="keyword">ngx_buf_tag_t</span> tag)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_chain_t</span>  *cl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 把out挂在busy的尾部 */</span></span><br><span class="line">    <span class="keyword">if</span> (*out) &#123;</span><br><span class="line">        <span class="keyword">if</span> (*busy == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            *busy = *out;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="keyword">for</span> (cl = *busy; cl-&gt;next; cl = cl-&gt;next) &#123; <span class="comment">/* void */</span> &#125;</span><br><span class="line"></span><br><span class="line">            cl-&gt;next = *out;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        *out = <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 开始清理链表 */</span></span><br><span class="line">    <span class="keyword">while</span> (*busy) &#123;</span><br><span class="line">        cl = *busy;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 只释放大小为0的buf */</span></span><br><span class="line">        <span class="keyword">if</span> (ngx_buf_size(cl-&gt;buf) != <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 当tag不是目标tag时 把该链表挂载内存池复用链表上 */</span></span><br><span class="line">        <span class="keyword">if</span> (cl-&gt;buf-&gt;tag != tag) &#123;</span><br><span class="line">            *busy = cl-&gt;next;</span><br><span class="line">            ngx_free_chain(p, cl);</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 当tag是目标tag时 把该buf的已用size清零 */</span></span><br><span class="line">        cl-&gt;buf-&gt;pos = cl-&gt;buf-&gt;start;</span><br><span class="line">        cl-&gt;buf-&gt;last = cl-&gt;buf-&gt;start;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 把释放后的链表放入free中，便于其他操作 */</span></span><br><span class="line">        *busy = cl-&gt;next;</span><br><span class="line">        cl-&gt;next = *<span class="built_in">free</span>;</span><br><span class="line">        *<span class="built_in">free</span> = cl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-chain-update-sent"><a href="#ngx-chain-update-sent" class="headerlink" title="ngx_chain_update_sent"></a>ngx_chain_update_sent</h4><p>更新链表中的每个节点buf所指向的内容区域，移动buf指向的开始指针</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_chain_t</span> *</span><br><span class="line">ngx_chain_update_sent(<span class="keyword">ngx_chain_t</span> *in, <span class="keyword">off_t</span> sent)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">off_t</span>  size;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> ( <span class="comment">/* void */</span> ; in; in = in-&gt;next) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (ngx_buf_special(in-&gt;buf)) &#123;</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 当处理大小为0 不需要移动指针 */</span></span><br><span class="line">        <span class="keyword">if</span> (sent == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* buf的实际大小 */</span></span><br><span class="line">        size = ngx_buf_size(in-&gt;buf);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 当已处理大小大于实际大小时 */</span></span><br><span class="line">        <span class="keyword">if</span> (sent &gt;= size) &#123;</span><br><span class="line">            sent -= size;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 移动内存开始位置到结束位置 */</span></span><br><span class="line">            <span class="keyword">if</span> (ngx_buf_in_memory(in-&gt;buf)) &#123;</span><br><span class="line">                in-&gt;buf-&gt;pos = in-&gt;buf-&gt;last;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 移动文件开始位置到结束位置 */</span></span><br><span class="line">            <span class="keyword">if</span> (in-&gt;buf-&gt;in_file) &#123;</span><br><span class="line">                in-&gt;buf-&gt;file_pos = in-&gt;buf-&gt;file_last;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 内存开始位置后移sent大小 */</span></span><br><span class="line">        <span class="keyword">if</span> (ngx_buf_in_memory(in-&gt;buf)) &#123;</span><br><span class="line">            in-&gt;buf-&gt;pos += (<span class="keyword">size_t</span>) sent;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 文件开始位置后移sent大小 */</span></span><br><span class="line">        <span class="keyword">if</span> (in-&gt;buf-&gt;in_file) &#123;</span><br><span class="line">            in-&gt;buf-&gt;file_pos += sent;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">break</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> in;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/nginx/" rel="tag"># nginx</a>
+              <a href="/tags/buf/" rel="tag"># buf</a>
+              <a href="/tags/chain/" rel="tag"># chain</a>
+              <a href="/tags/%E9%93%BE%E8%A1%A8/" rel="tag"># 链表</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2017/07/12/ngx-queue/" rel="prev" title="Nginx源码阅读-队列">
+                  <i class="fa fa-chevron-left"></i> Nginx源码阅读-队列
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2017/09/20/ngx-module/" rel="next" title="Nginx源码解读-module">
+                  Nginx源码解读-module <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="redis的发布订阅功能很简单，消息的生产方不直接和订阅方交互，而是通过channel渠道，和KAFKA中的topic是同样的角色。 订阅分为两种类型，一种是具体的，指定了channel的名字，比如hello；另一种是模糊的，指定的channel名字是含有正则的，如hell*。每一个client有两个属性，分别存储自己订阅的具体channel，和模糊的channel。server也有两个字段，维护">
+<meta property="og:type" content="article">
+<meta property="og:title" content="redis-发布订阅">
+<meta property="og:url" content="http://suntw2015.github.io/2019/11/08/redis-pubsub/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="redis的发布订阅功能很简单，消息的生产方不直接和订阅方交互，而是通过channel渠道，和KAFKA中的topic是同样的角色。 订阅分为两种类型，一种是具体的，指定了channel的名字，比如hello；另一种是模糊的，指定的channel名字是含有正则的，如hell*。每一个client有两个属性，分别存储自己订阅的具体channel，和模糊的channel。server也有两个字段，维护">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-11-08T09:38:52.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.190Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="redis">
+<meta property="article:tag" content="发布">
+<meta property="article:tag" content="订阅">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2019/11/08/redis-pubsub/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>redis-发布订阅 | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text">数据结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#freePubsubPattern"><span class="nav-number">2.1.</span> <span class="nav-text">freePubsubPattern</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#listMatchPubsubPattern"><span class="nav-number">2.2.</span> <span class="nav-text">listMatchPubsubPattern</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#clientSubscriptionsCount"><span class="nav-number">2.3.</span> <span class="nav-text">clientSubscriptionsCount</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubSubscribeChannel"><span class="nav-number">2.4.</span> <span class="nav-text">pubsubSubscribeChannel</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubUnsubscribeChannel"><span class="nav-number">2.5.</span> <span class="nav-text">pubsubUnsubscribeChannel</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubSubscribePattern"><span class="nav-number">2.6.</span> <span class="nav-text">pubsubSubscribePattern</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubUnsubscribePattern"><span class="nav-number">2.7.</span> <span class="nav-text">pubsubUnsubscribePattern</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubUnsubscribeAllChannels"><span class="nav-number">2.8.</span> <span class="nav-text">pubsubUnsubscribeAllChannels</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubUnsubscribeAllPatterns"><span class="nav-number">2.9.</span> <span class="nav-text">pubsubUnsubscribeAllPatterns</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubPublishMessage"><span class="nav-number">2.10.</span> <span class="nav-text">pubsubPublishMessage</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#subscribeCommand"><span class="nav-number">2.11.</span> <span class="nav-text">subscribeCommand</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#unsubscribeCommand"><span class="nav-number">2.12.</span> <span class="nav-text">unsubscribeCommand</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#psubscribeCommand"><span class="nav-number">2.13.</span> <span class="nav-text">psubscribeCommand</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#punsubscribeCommand"><span class="nav-number">2.14.</span> <span class="nav-text">punsubscribeCommand</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#publishCommand"><span class="nav-number">2.15.</span> <span class="nav-text">publishCommand</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pubsubCommand"><span class="nav-number">2.16.</span> <span class="nav-text">pubsubCommand</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2019/11/08/redis-pubsub/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          redis-发布订阅
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2019-11-08 17:38:52" itemprop="dateCreated datePublished" datetime="2019-11-08T17:38:52+08:00">2019-11-08</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <p>redis的发布订阅功能很简单，消息的生产方不直接和订阅方交互，而是通过channel渠道，和KAFKA中的topic是同样的角色。</p>
+<p>订阅分为两种类型，一种是具体的，指定了channel的名字，比如hello；另一种是模糊的，指定的channel名字是含有正则的，如hell*。每一个client有两个属性，分别存储自己订阅的具体channel，和模糊的channel。server也有两个字段，维护了所有的channel及被订阅的client，和所有的模糊channel。</p>
+<p>当有客户端往某个channel中发送消息时，server会有两步操作。1.向这个channel对应的所有的client发送消息；2.依次遍历所有的模糊channel，如果模糊的channel和改channel匹配的话，则向对应的client发送消息。如果一个客户端订阅了多个模糊channel，且都命中，则会收到两个消息。</p>
+<p>当客户端正常取消订阅的时候，就从client和server对应的列表中移除。当客户端没有取消订阅就退出时，定时任务检测到客户端超时后，释放客户端时，会主动释放客户端所有的订阅。</p>
+<span id="more"></span>
+
+<h3 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">client</span> &#123;</span></span><br><span class="line">	dict *pubsub_channels;  <span class="comment">//客户端订阅的具体channel</span></span><br><span class="line">    <span class="built_in">list</span> *pubsub_patterns;  <span class="comment">//客户端订阅的模糊匹配channel</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">server</span> &#123;</span></span><br><span class="line">	dict *pubsub_channels;  <span class="comment">//server保存的所有channel-&gt;clients</span></span><br><span class="line">    <span class="built_in">list</span> *pubsub_patterns;  <span class="comment">//server保存所有的模糊匹配，列表的元素是pubsubPattern</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//模糊匹配用到</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">pubsubPattern</span> &#123;</span> </span><br><span class="line">    client *client; <span class="comment">//客户端</span></span><br><span class="line">    robj *pattern; <span class="comment">//模糊匹配的内容</span></span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+
+<h3 id="源码分析"><a href="#源码分析" class="headerlink" title="源码分析"></a>源码分析</h3><h4 id="freePubsubPattern"><a href="#freePubsubPattern" class="headerlink" title="freePubsubPattern"></a>freePubsubPattern</h4><p>释放pubsubPattern结构体</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">freePubsubPattern</span><span class="params">(<span class="keyword">void</span> *p)</span> </span>&#123;</span><br><span class="line">    pubsubPattern *pat = p;</span><br><span class="line"></span><br><span class="line">    decrRefCount(pat-&gt;pattern);</span><br><span class="line">    zfree(pat);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="listMatchPubsubPattern"><a href="#listMatchPubsubPattern" class="headerlink" title="listMatchPubsubPattern"></a>listMatchPubsubPattern</h4><p>比较两个pubsubPattern是否同一个</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">listMatchPubsubPattern</span><span class="params">(<span class="keyword">void</span> *a, <span class="keyword">void</span> *b)</span> </span>&#123;</span><br><span class="line">    pubsubPattern *pa = a, *pb = b;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> (pa-&gt;client == pb-&gt;client) &amp;&amp;</span><br><span class="line">           (equalStringObjects(pa-&gt;pattern,pb-&gt;pattern));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="clientSubscriptionsCount"><a href="#clientSubscriptionsCount" class="headerlink" title="clientSubscriptionsCount"></a>clientSubscriptionsCount</h4><p>获取客户端订阅的数量，具体+模糊</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">clientSubscriptionsCount</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> dictSize(c-&gt;pubsub_channels)+</span><br><span class="line">           listLength(c-&gt;pubsub_patterns);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubSubscribeChannel"><a href="#pubsubSubscribeChannel" class="headerlink" title="pubsubSubscribeChannel"></a>pubsubSubscribeChannel</h4><p>订阅具体channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubSubscribeChannel</span><span class="params">(client *c, robj *channel)</span> </span>&#123;</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    <span class="built_in">list</span> *clients = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">int</span> retval = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//维护client自己的channel列表</span></span><br><span class="line">    <span class="keyword">if</span> (dictAdd(c-&gt;pubsub_channels,channel,<span class="literal">NULL</span>) == DICT_OK) &#123;</span><br><span class="line">        retval = <span class="number">1</span>;</span><br><span class="line">        incrRefCount(channel);</span><br><span class="line">        </span><br><span class="line">        <span class="comment">//维护server的channel列表</span></span><br><span class="line">        de = dictFind(server.pubsub_channels,channel);</span><br><span class="line">        <span class="keyword">if</span> (de == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            clients = listCreate();</span><br><span class="line">            dictAdd(server.pubsub_channels,channel,clients);</span><br><span class="line">            incrRefCount(channel);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            clients = dictGetVal(de);</span><br><span class="line">        &#125;</span><br><span class="line">        listAddNodeTail(clients,c);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//返回响应信息</span></span><br><span class="line">    addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">    addReply(c,shared.subscribebulk);</span><br><span class="line">    addReplyBulk(c,channel);</span><br><span class="line">    addReplyLongLong(c,clientSubscriptionsCount(c));</span><br><span class="line">    <span class="keyword">return</span> retval;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubUnsubscribeChannel"><a href="#pubsubUnsubscribeChannel" class="headerlink" title="pubsubUnsubscribeChannel"></a>pubsubUnsubscribeChannel</h4><p>取消订阅具体channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubUnsubscribeChannel</span><span class="params">(client *c, robj *channel, <span class="keyword">int</span> notify)</span> </span>&#123;</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    <span class="built_in">list</span> *clients;</span><br><span class="line">    listNode *ln;</span><br><span class="line">    <span class="keyword">int</span> retval = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    incrRefCount(channel);</span><br><span class="line"></span><br><span class="line">    <span class="comment">//从client的列表里删除</span></span><br><span class="line">    <span class="keyword">if</span> (dictDelete(c-&gt;pubsub_channels,channel) == DICT_OK) &#123;</span><br><span class="line">        retval = <span class="number">1</span>;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">//从server的列表里删除</span></span><br><span class="line">        de = dictFind(server.pubsub_channels,channel);</span><br><span class="line">        serverAssertWithInfo(c,<span class="literal">NULL</span>,de != <span class="literal">NULL</span>);</span><br><span class="line">        clients = dictGetVal(de);</span><br><span class="line">        ln = listSearchKey(clients,c);</span><br><span class="line">        serverAssertWithInfo(c,<span class="literal">NULL</span>,ln != <span class="literal">NULL</span>);</span><br><span class="line">        listDelNode(clients,ln);</span><br><span class="line"></span><br><span class="line">        <span class="comment">//改channel没人订阅了，从哈希表里删掉</span></span><br><span class="line">        <span class="keyword">if</span> (listLength(clients) == <span class="number">0</span>) &#123;</span><br><span class="line">            dictDelete(server.pubsub_channels,channel);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//通知</span></span><br><span class="line">    <span class="keyword">if</span> (notify) &#123;</span><br><span class="line">        addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">        addReply(c,shared.unsubscribebulk);</span><br><span class="line">        addReplyBulk(c,channel);</span><br><span class="line">        addReplyLongLong(c,dictSize(c-&gt;pubsub_channels)+</span><br><span class="line">                       listLength(c-&gt;pubsub_patterns));</span><br><span class="line"></span><br><span class="line">    &#125;</span><br><span class="line">    decrRefCount(channel);</span><br><span class="line">    <span class="keyword">return</span> retval;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubSubscribePattern"><a href="#pubsubSubscribePattern" class="headerlink" title="pubsubSubscribePattern"></a>pubsubSubscribePattern</h4><p>订阅模糊channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubSubscribePattern</span><span class="params">(client *c, robj *pattern)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> retval = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//维护client自己的</span></span><br><span class="line">    <span class="keyword">if</span> (listSearchKey(c-&gt;pubsub_patterns,pattern) == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        retval = <span class="number">1</span>;</span><br><span class="line">        pubsubPattern *pat;</span><br><span class="line">        listAddNodeTail(c-&gt;pubsub_patterns,pattern);</span><br><span class="line">        incrRefCount(pattern);</span><br><span class="line"></span><br><span class="line">        <span class="comment">//维护server的模糊列表</span></span><br><span class="line">        pat = zmalloc(<span class="keyword">sizeof</span>(*pat));</span><br><span class="line">        pat-&gt;pattern = getDecodedObject(pattern);</span><br><span class="line">        pat-&gt;client = c;</span><br><span class="line">        listAddNodeTail(server.pubsub_patterns,pat);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//通知</span></span><br><span class="line">    addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">    addReply(c,shared.psubscribebulk);</span><br><span class="line">    addReplyBulk(c,pattern);</span><br><span class="line">    addReplyLongLong(c,clientSubscriptionsCount(c));</span><br><span class="line">    <span class="keyword">return</span> retval;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubUnsubscribePattern"><a href="#pubsubUnsubscribePattern" class="headerlink" title="pubsubUnsubscribePattern"></a>pubsubUnsubscribePattern</h4><p>取消订阅模糊channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubUnsubscribePattern</span><span class="params">(client *c, robj *pattern, <span class="keyword">int</span> notify)</span> </span>&#123;</span><br><span class="line">    listNode *ln;</span><br><span class="line">    pubsubPattern pat;</span><br><span class="line">    <span class="keyword">int</span> retval = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    incrRefCount(pattern);</span><br><span class="line"></span><br><span class="line">    <span class="comment">//确定模糊搜索是否存在</span></span><br><span class="line">    <span class="keyword">if</span> ((ln = listSearchKey(c-&gt;pubsub_patterns,pattern)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        retval = <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">        <span class="comment">//从client自己的列表里删除</span></span><br><span class="line">        listDelNode(c-&gt;pubsub_patterns,ln);</span><br><span class="line">        pat.client = c;</span><br><span class="line">        pat.pattern = pattern;</span><br><span class="line"></span><br><span class="line">        <span class="comment">//如果client能找到，server中一定能找到，删掉server中的</span></span><br><span class="line">        ln = listSearchKey(server.pubsub_patterns,&amp;pat);</span><br><span class="line">        listDelNode(server.pubsub_patterns,ln);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//通知</span></span><br><span class="line">    <span class="keyword">if</span> (notify) &#123;</span><br><span class="line">        addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">        addReply(c,shared.punsubscribebulk);</span><br><span class="line">        addReplyBulk(c,pattern);</span><br><span class="line">        addReplyLongLong(c,dictSize(c-&gt;pubsub_channels)+</span><br><span class="line">                       listLength(c-&gt;pubsub_patterns));</span><br><span class="line">    &#125;</span><br><span class="line">    decrRefCount(pattern);</span><br><span class="line">    <span class="keyword">return</span> retval;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubUnsubscribeAllChannels"><a href="#pubsubUnsubscribeAllChannels" class="headerlink" title="pubsubUnsubscribeAllChannels"></a>pubsubUnsubscribeAllChannels</h4><p>取消订阅所有的具体channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubUnsubscribeAllChannels</span><span class="params">(client *c, <span class="keyword">int</span> notify)</span> </span>&#123;</span><br><span class="line">    dictIterator *di = dictGetSafeIterator(c-&gt;pubsub_channels);</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    <span class="keyword">int</span> count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//依次删除</span></span><br><span class="line">    <span class="keyword">while</span>((de = dictNext(di)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        robj *channel = dictGetKey(de);</span><br><span class="line"></span><br><span class="line">        count += pubsubUnsubscribeChannel(c,channel,notify);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">//一个也没有的回复</span></span><br><span class="line">    <span class="keyword">if</span> (notify &amp;&amp; count == <span class="number">0</span>) &#123;</span><br><span class="line">        addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">        addReply(c,shared.unsubscribebulk);</span><br><span class="line">        addReply(c,shared.nullbulk);</span><br><span class="line">        addReplyLongLong(c,dictSize(c-&gt;pubsub_channels)+</span><br><span class="line">                       listLength(c-&gt;pubsub_patterns));</span><br><span class="line">    &#125;</span><br><span class="line">    dictReleaseIterator(di);</span><br><span class="line">    <span class="keyword">return</span> count;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubUnsubscribeAllPatterns"><a href="#pubsubUnsubscribeAllPatterns" class="headerlink" title="pubsubUnsubscribeAllPatterns"></a>pubsubUnsubscribeAllPatterns</h4><p>取消订阅所有的模糊channel</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubUnsubscribeAllPatterns</span><span class="params">(client *c, <span class="keyword">int</span> notify)</span> </span>&#123;</span><br><span class="line">    listNode *ln;</span><br><span class="line">    listIter li;</span><br><span class="line">    <span class="keyword">int</span> count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//维护client自己的列表</span></span><br><span class="line">    listRewind(c-&gt;pubsub_patterns,&amp;li);</span><br><span class="line">    <span class="keyword">while</span> ((ln = listNext(&amp;li)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        robj *pattern = ln-&gt;value;</span><br><span class="line"></span><br><span class="line">        count += pubsubUnsubscribePattern(c,pattern,notify);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//通知</span></span><br><span class="line">    <span class="keyword">if</span> (notify &amp;&amp; count == <span class="number">0</span>) &#123;</span><br><span class="line">        addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">        addReply(c,shared.punsubscribebulk);</span><br><span class="line">        addReply(c,shared.nullbulk);</span><br><span class="line">        addReplyLongLong(c,dictSize(c-&gt;pubsub_channels)+</span><br><span class="line">                       listLength(c-&gt;pubsub_patterns));</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> count;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubPublishMessage"><a href="#pubsubPublishMessage" class="headerlink" title="pubsubPublishMessage"></a>pubsubPublishMessage</h4><p>针对某个channel发布消息</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">pubsubPublishMessage</span><span class="params">(robj *channel, robj *message)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> receivers = <span class="number">0</span>;</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    listNode *ln;</span><br><span class="line">    listIter li;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//向订阅具体channel的client发送消息</span></span><br><span class="line">    de = dictFind(server.pubsub_channels,channel);</span><br><span class="line">    <span class="keyword">if</span> (de) &#123;</span><br><span class="line">        <span class="built_in">list</span> *<span class="built_in">list</span> = dictGetVal(de);</span><br><span class="line">        listNode *ln;</span><br><span class="line">        listIter li;</span><br><span class="line"></span><br><span class="line">        listRewind(<span class="built_in">list</span>,&amp;li);</span><br><span class="line">        <span class="keyword">while</span> ((ln = listNext(&amp;li)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">            client *c = ln-&gt;value;</span><br><span class="line"></span><br><span class="line">            addReply(c,shared.mbulkhdr[<span class="number">3</span>]);</span><br><span class="line">            addReply(c,shared.messagebulk);</span><br><span class="line">            addReplyBulk(c,channel);</span><br><span class="line">            addReplyBulk(c,message);</span><br><span class="line">            receivers++;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//想订阅模糊channel的client发送消息</span></span><br><span class="line">    <span class="keyword">if</span> (listLength(server.pubsub_patterns)) &#123;</span><br><span class="line">        listRewind(server.pubsub_patterns,&amp;li);</span><br><span class="line">        channel = getDecodedObject(channel);</span><br><span class="line">        <span class="keyword">while</span> ((ln = listNext(&amp;li)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">            pubsubPattern *pat = ln-&gt;value;</span><br><span class="line"></span><br><span class="line">            <span class="comment">//正则匹配</span></span><br><span class="line">            <span class="keyword">if</span> (stringmatchlen((<span class="keyword">char</span>*)pat-&gt;pattern-&gt;ptr,</span><br><span class="line">                                sdslen(pat-&gt;pattern-&gt;ptr),</span><br><span class="line">                                (<span class="keyword">char</span>*)channel-&gt;ptr,</span><br><span class="line">                                sdslen(channel-&gt;ptr),<span class="number">0</span>)) &#123;</span><br><span class="line">                addReply(pat-&gt;client,shared.mbulkhdr[<span class="number">4</span>]);</span><br><span class="line">                addReply(pat-&gt;client,shared.pmessagebulk);</span><br><span class="line">                addReplyBulk(pat-&gt;client,pat-&gt;pattern);</span><br><span class="line">                addReplyBulk(pat-&gt;client,channel);</span><br><span class="line">                addReplyBulk(pat-&gt;client,message);</span><br><span class="line">                receivers++;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        decrRefCount(channel);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> receivers;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="subscribeCommand"><a href="#subscribeCommand" class="headerlink" title="subscribeCommand"></a>subscribeCommand</h4><p>响应subscribe订阅命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">subscribeCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">1</span>; j &lt; c-&gt;argc; j++)</span><br><span class="line">        pubsubSubscribeChannel(c,c-&gt;argv[j]);</span><br><span class="line">    c-&gt;flags |= CLIENT_PUBSUB;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="unsubscribeCommand"><a href="#unsubscribeCommand" class="headerlink" title="unsubscribeCommand"></a>unsubscribeCommand</h4><p>响应unsubscribe取消订阅命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">unsubscribeCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//不带参数的情况下，取消所有的订阅</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;argc == <span class="number">1</span>) &#123;</span><br><span class="line">        pubsubUnsubscribeAllChannels(c,<span class="number">1</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (j = <span class="number">1</span>; j &lt; c-&gt;argc; j++)</span><br><span class="line">            pubsubUnsubscribeChannel(c,c-&gt;argv[j],<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (clientSubscriptionsCount(c) == <span class="number">0</span>) c-&gt;flags &amp;= ~CLIENT_PUBSUB;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="psubscribeCommand"><a href="#psubscribeCommand" class="headerlink" title="psubscribeCommand"></a>psubscribeCommand</h4><p>响应psubscribe模糊订阅命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">psubscribeCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">1</span>; j &lt; c-&gt;argc; j++)</span><br><span class="line">        pubsubSubscribePattern(c,c-&gt;argv[j]);</span><br><span class="line">    c-&gt;flags |= CLIENT_PUBSUB;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="punsubscribeCommand"><a href="#punsubscribeCommand" class="headerlink" title="punsubscribeCommand"></a>punsubscribeCommand</h4><p>响应punsubscribe取消模糊订阅命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">punsubscribeCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="comment">//不带参数的情况下，取消所有的模糊订阅</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;argc == <span class="number">1</span>) &#123;</span><br><span class="line">        pubsubUnsubscribeAllPatterns(c,<span class="number">1</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (j = <span class="number">1</span>; j &lt; c-&gt;argc; j++)</span><br><span class="line">            pubsubUnsubscribePattern(c,c-&gt;argv[j],<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (clientSubscriptionsCount(c) == <span class="number">0</span>) c-&gt;flags &amp;= ~CLIENT_PUBSUB;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="publishCommand"><a href="#publishCommand" class="headerlink" title="publishCommand"></a>publishCommand</h4><p>响应publish发布命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">publishCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> receivers = pubsubPublishMessage(c-&gt;argv[<span class="number">1</span>],c-&gt;argv[<span class="number">2</span>]);</span><br><span class="line"></span><br><span class="line">    <span class="comment">//集群模式</span></span><br><span class="line">    <span class="keyword">if</span> (server.cluster_enabled)</span><br><span class="line">        clusterPropagatePublish(c-&gt;argv[<span class="number">1</span>],c-&gt;argv[<span class="number">2</span>]);</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="comment">//其余模式把该命令传播给从节点</span></span><br><span class="line">        forceCommandPropagation(c,PROPAGATE_REPL);</span><br><span class="line">    addReplyLongLong(c,receivers);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="pubsubCommand"><a href="#pubsubCommand" class="headerlink" title="pubsubCommand"></a>pubsubCommand</h4><p>响应pubsub命令</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">pubsubCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="comment">//返回命令help信息</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;argc == <span class="number">2</span> &amp;&amp; !strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,<span class="string">&quot;help&quot;</span>)) &#123;</span><br><span class="line">        <span class="keyword">const</span> <span class="keyword">char</span> *help[] = &#123;</span><br><span class="line"><span class="string">&quot;CHANNELS [&lt;pattern&gt;] -- Return the currently active channels matching a pattern (default: all).&quot;</span>,</span><br><span class="line"><span class="string">&quot;NUMPAT -- Return number of subscriptions to patterns.&quot;</span>,</span><br><span class="line"><span class="string">&quot;NUMSUB [channel-1 .. channel-N] -- Returns the number of subscribers for the specified channels (excluding patterns, default: none).&quot;</span>,</span><br><span class="line"><span class="literal">NULL</span></span><br><span class="line">        &#125;;</span><br><span class="line">        addReplyHelp(c, help);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (!strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,<span class="string">&quot;channels&quot;</span>) &amp;&amp;</span><br><span class="line">        <span class="comment">//获取正则channel信息</span></span><br><span class="line">        (c-&gt;argc == <span class="number">2</span> || c-&gt;argc == <span class="number">3</span>))</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">/* PUBSUB CHANNELS [&lt;pattern&gt;] */</span></span><br><span class="line">        sds pat = (c-&gt;argc == <span class="number">2</span>) ? <span class="literal">NULL</span> : c-&gt;argv[<span class="number">2</span>]-&gt;ptr;</span><br><span class="line">        dictIterator *di = dictGetIterator(server.pubsub_channels);</span><br><span class="line">        dictEntry *de;</span><br><span class="line">        <span class="keyword">long</span> mblen = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">void</span> *replylen;</span><br><span class="line"></span><br><span class="line">        replylen = addDeferredMultiBulkLength(c);</span><br><span class="line">        <span class="keyword">while</span>((de = dictNext(di)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">            robj *cobj = dictGetKey(de);</span><br><span class="line">            sds channel = cobj-&gt;ptr;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> (!pat || stringmatchlen(pat, sdslen(pat),</span><br><span class="line">                                       channel, sdslen(channel),<span class="number">0</span>))</span><br><span class="line">            &#123;</span><br><span class="line">                addReplyBulk(c,cobj);</span><br><span class="line">                mblen++;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        dictReleaseIterator(di);</span><br><span class="line">        setDeferredMultiBulkLength(c,replylen,mblen);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (!strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,<span class="string">&quot;numsub&quot;</span>) &amp;&amp; c-&gt;argc &gt;= <span class="number">2</span>) &#123;</span><br><span class="line">        <span class="comment">//获取channel订阅的数量</span></span><br><span class="line">        <span class="comment">/* PUBSUB NUMSUB [Channel_1 ... Channel_N] */</span></span><br><span class="line">        <span class="keyword">int</span> j;</span><br><span class="line"></span><br><span class="line">        addReplyMultiBulkLen(c,(c-&gt;argc<span class="number">-2</span>)*<span class="number">2</span>);</span><br><span class="line">        <span class="keyword">for</span> (j = <span class="number">2</span>; j &lt; c-&gt;argc; j++) &#123;</span><br><span class="line">            <span class="built_in">list</span> *l = dictFetchValue(server.pubsub_channels,c-&gt;argv[j]);</span><br><span class="line"></span><br><span class="line">            addReplyBulk(c,c-&gt;argv[j]);</span><br><span class="line">            addReplyLongLong(c,l ? listLength(l) : <span class="number">0</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (!strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,<span class="string">&quot;numpat&quot;</span>) &amp;&amp; c-&gt;argc == <span class="number">2</span>) &#123;</span><br><span class="line">        <span class="comment">//获取模糊channel的数量</span></span><br><span class="line">        <span class="comment">/* PUBSUB NUMPAT */</span></span><br><span class="line">        addReplyLongLong(c,listLength(server.pubsub_patterns));</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        addReplySubcommandSyntaxError(c);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/redis/" rel="tag"># redis</a>
+              <a href="/tags/%E5%8F%91%E5%B8%83/" rel="tag"># 发布</a>
+              <a href="/tags/%E8%AE%A2%E9%98%85/" rel="tag"># 订阅</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2019/10/21/redis-data-set/" rel="prev" title="数据结构-集合">
+                  <i class="fa fa-chevron-left"></i> 数据结构-集合
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2019/11/18/redis-sentinel/" rel="next" title="redis-哨兵">
+                  redis-哨兵 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

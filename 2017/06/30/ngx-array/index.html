@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="前言数组在Nginx中是通过ngx_array_t的结构体实现的，在这个结构体中，分别记录了数组的容量大小、实际使用的数量、每个元素的大小以及存储数组元素空间的起始地址，其内部存储数组元素的地方是一块连续的空间。在相关的函数中，都会看到为了维持这个连续性而进行的一些操作。 连续性是指当内存池为数组元素分配存储空间后，该内存池没有为其他的场景再次分配内存，接下来当数组需要扩大容量的时候，内存池能够接">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Nginx源码解读-数组">
+<meta property="og:url" content="http://suntw2015.github.io/2017/06/30/ngx-array/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="前言数组在Nginx中是通过ngx_array_t的结构体实现的，在这个结构体中，分别记录了数组的容量大小、实际使用的数量、每个元素的大小以及存储数组元素空间的起始地址，其内部存储数组元素的地方是一块连续的空间。在相关的函数中，都会看到为了维持这个连续性而进行的一些操作。 连续性是指当内存池为数组元素分配存储空间后，该内存池没有为其他的场景再次分配内存，接下来当数组需要扩大容量的时候，内存池能够接">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://suntw2015.github.io/images/ngx_array_t.png">
+<meta property="article:published_time" content="2017-06-30T08:18:22.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.177Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="nginx">
+<meta property="article:tag" content="array">
+<meta property="article:tag" content="数组">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://suntw2015.github.io/images/ngx_array_t.png">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2017/06/30/ngx-array/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>Nginx源码解读-数组 | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%82%A8%E5%A4%87%E7%9F%A5%E8%AF%86"><span class="nav-number">2.</span> <span class="nav-text">储备知识</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E5%AE%9A%E4%B9%89"><span class="nav-number">3.</span> <span class="nav-text">数据结构定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E5%87%BD%E6%95%B0"><span class="nav-number">4.</span> <span class="nav-text">主要函数</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-array-create"><span class="nav-number">4.1.</span> <span class="nav-text">ngx_array_create</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-array-init"><span class="nav-number">4.2.</span> <span class="nav-text">ngx_array_init</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-array-destroy"><span class="nav-number">4.3.</span> <span class="nav-text">ngx_array_destroy</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-array-push"><span class="nav-number">4.4.</span> <span class="nav-text">ngx_array_push</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-array-push-n"><span class="nav-number">4.5.</span> <span class="nav-text">ngx_array_push_n</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2017/06/30/ngx-array/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Nginx源码解读-数组
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2017-06-30 16:18:22" itemprop="dateCreated datePublished" datetime="2017-06-30T16:18:22+08:00">2017-06-30</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/nginx/" itemprop="url" rel="index"><span itemprop="name">nginx</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>数组在Nginx中是通过<code>ngx_array_t</code>的结构体实现的，在这个结构体中，分别记录了数组的容量大小、实际使用的数量、每个元素的大小以及存储数组元素空间的起始地址，其内部存储数组元素的地方是一块连续的空间。在相关的函数中，都会看到为了维持这个<code>连续性</code>而进行的一些操作。</p>
+<p><code>连续性</code>是指当内存池为数组元素分配存储空间后，该内存池没有为其他的场景再次分配内存，接下来当数组需要扩大容量的时候，内存池能够接着上次为数组元素分配的地址结尾处接着分配空间，从而保证数组元素存储空间的连续。</p>
+<span id="more"></span>
+
+<h3 id="储备知识"><a href="#储备知识" class="headerlink" title="储备知识"></a>储备知识</h3><ul>
+<li><a href="/2017/06/30/ngx-array/" title="Nginx内存管理">Nginx内存管理</a></li>
+</ul>
+<h3 id="数据结构定义"><a href="#数据结构定义" class="headerlink" title="数据结构定义"></a>数据结构定义</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">void</span>        *elts;      <span class="comment">//元素存储位置的起始地址</span></span><br><span class="line">    <span class="keyword">ngx_uint_t</span>   nelts;     <span class="comment">//数组中实际使用数量</span></span><br><span class="line">    <span class="keyword">size_t</span>       size;      <span class="comment">//数组每一个元素的大小</span></span><br><span class="line">    <span class="keyword">ngx_uint_t</span>   nalloc;    <span class="comment">//数组的总容量大小</span></span><br><span class="line">    <span class="keyword">ngx_pool_t</span>  *pool;      <span class="comment">//数组存储的内存池</span></span><br><span class="line">&#125; <span class="keyword">ngx_array_t</span>;</span><br></pre></td></tr></table></figure>
+
+<h3 id="主要函数"><a href="#主要函数" class="headerlink" title="主要函数"></a>主要函数</h3><h4 id="ngx-array-create"><a href="#ngx-array-create" class="headerlink" title="ngx_array_create"></a>ngx_array_create</h4><p>该函数作用是创建一个数组并返回，参数列表依次为<code>存储数组的内存池p</code>、<code>数组的容量n</code>、<code>数组每个元素的大小size</code></p>
+<blockquote>
+<p>注意:在这个方法中只是去申请了<code>ngx_array_t</code>大小的内存，用来存储元素的内存申请是在初始化<code>ngx_array_init</code>中完成的</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_array_t</span> *</span><br><span class="line">ngx_array_create(<span class="keyword">ngx_pool_t</span> *p, <span class="keyword">ngx_uint_t</span> n, <span class="keyword">size_t</span> size)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_array_t</span> *a;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 在内存池中申请`ngx_array_t`大小的内存 */</span></span><br><span class="line">    a = ngx_palloc(p, <span class="keyword">sizeof</span>(<span class="keyword">ngx_array_t</span>));</span><br><span class="line">    <span class="keyword">if</span> (a == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 初始化数组 */</span></span><br><span class="line">    <span class="keyword">if</span> (ngx_array_init(a, p, n, size) != NGX_OK) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> a;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-array-init"><a href="#ngx-array-init" class="headerlink" title="ngx_array_init"></a>ngx_array_init</h4><p>初始化数组，设置数组各个参数的值，为数组元素申请存储空间，参数列表依次是<code>待初始化的数组array</code>、<code>存储数组的内存池pool</code>、<code>数组容量大小n</code>、<code>数组每个元素大小size</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> ngx_inline <span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_array_init(<span class="keyword">ngx_array_t</span> *<span class="built_in">array</span>, <span class="keyword">ngx_pool_t</span> *pool, <span class="keyword">ngx_uint_t</span> n, <span class="keyword">size_t</span> size)</span><br><span class="line">&#123;</span><br><span class="line">    </span><br><span class="line">    <span class="built_in">array</span>-&gt;nelts = <span class="number">0</span>;</span><br><span class="line">    <span class="built_in">array</span>-&gt;size = size;</span><br><span class="line">    <span class="built_in">array</span>-&gt;nalloc = n;</span><br><span class="line">    <span class="built_in">array</span>-&gt;pool = pool;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 为数组元素申请存储空间 */</span></span><br><span class="line">    <span class="built_in">array</span>-&gt;elts = ngx_palloc(pool, n * size);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">array</span>-&gt;elts == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> NGX_ERROR;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> NGX_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-array-destroy"><a href="#ngx-array-destroy" class="headerlink" title="ngx_array_destroy"></a>ngx_array_destroy</h4><p>销毁数组，主要操作是释放存储数组元素空间和存储数组的空间</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span></span><br><span class="line">ngx_array_destroy(<span class="keyword">ngx_array_t</span> *a)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_pool_t</span>  *p;</span><br><span class="line"></span><br><span class="line">    p = a-&gt;pool;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 如果内存池分配空间给数组元素后没有再分配给其他情景 这种情况下只需要去移动last指针位置就好了 如下图所示 绿色实心箭头移动到绿色虚线箭头位置 */</span></span><br><span class="line">    <span class="keyword">if</span> ((u_char *) a-&gt;elts + a-&gt;size * a-&gt;nalloc == p-&gt;d.last) &#123;</span><br><span class="line">        p-&gt;d.last -= a-&gt;size * a-&gt;nalloc;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 清除存储结构体的空间 */</span></span><br><span class="line">    <span class="keyword">if</span> ((u_char *) a + <span class="keyword">sizeof</span>(<span class="keyword">ngx_array_t</span>) == p-&gt;d.last) &#123;</span><br><span class="line">        p-&gt;d.last = (u_char *) a;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/images/ngx_array_t.png"></p>
+<h4 id="ngx-array-push"><a href="#ngx-array-push" class="headerlink" title="ngx_array_push"></a>ngx_array_push</h4><p>向数组内添加一个元素，这个方法的返回值是新元素的地址，具体的赋值操作要在外部完成</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span> *</span><br><span class="line">ngx_array_push(<span class="keyword">ngx_array_t</span> *a)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">void</span>        *elt, *<span class="keyword">new</span>;</span><br><span class="line">    <span class="keyword">size_t</span>       size;</span><br><span class="line">    <span class="keyword">ngx_pool_t</span>  *p;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 如果实际使用数量等于数组的容量 也就是数组已经满了 */</span></span><br><span class="line">    <span class="keyword">if</span> (a-&gt;nelts == a-&gt;nalloc) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* the array is full */</span></span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 数组当前容量所占内存大小 */</span></span><br><span class="line">        size = a-&gt;size * a-&gt;nalloc;</span><br><span class="line"></span><br><span class="line">        p = a-&gt;pool;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 如果数组在内存池中是最后一个申请的(保证数组元素存储空间的连续性) 且 内存池可用大小还能够放得下一个元素 */</span></span><br><span class="line">        <span class="keyword">if</span> ((u_char *) a-&gt;elts + size == p-&gt;d.last</span><br><span class="line">            &amp;&amp; p-&gt;d.last + a-&gt;size &lt;= p-&gt;d.end)</span><br><span class="line">        &#123;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 移动内存池的可分配指针 并把数组的容量加一 */</span></span><br><span class="line">            p-&gt;d.last += a-&gt;size;</span><br><span class="line">            a-&gt;nalloc++;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 当内存池不能保证元素存储空间的连续性 或者 内存池剩余大小不够放下一个元素了 这种情况重新申请内存，大小扩大一倍，把内存池中源数据拷贝过去 */</span></span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 创建一个2倍容量的内存池 */</span></span><br><span class="line">            <span class="keyword">new</span> = ngx_palloc(p, <span class="number">2</span> * size);</span><br><span class="line">            <span class="keyword">if</span> (<span class="keyword">new</span> == <span class="literal">NULL</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 把内存池中源数组内容拷贝过去 */</span></span><br><span class="line">            ngx_memcpy(<span class="keyword">new</span>, a-&gt;elts, size);</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 指定数组元素新的存储位置 */</span></span><br><span class="line">            a-&gt;elts = <span class="keyword">new</span>;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 容量扩大一倍 */</span></span><br><span class="line">            a-&gt;nalloc *= <span class="number">2</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 获取内存池中新元素的位置  元素起始地址 + (每个元素大小 * 数组实际使用大小)  */</span></span><br><span class="line">    elt = (u_char *) a-&gt;elts + a-&gt;size * a-&gt;nelts;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 数组实际使用量加一 */</span></span><br><span class="line">    a-&gt;nelts++;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> elt;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-array-push-n"><a href="#ngx-array-push-n" class="headerlink" title="ngx_array_push_n"></a>ngx_array_push_n</h4><p>向数组内添加n个元素 返回n个元素存储空间的起始地址 具体的赋值操作在外部完成</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span> *</span><br><span class="line">ngx_array_push_n(<span class="keyword">ngx_array_t</span> *a, <span class="keyword">ngx_uint_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">void</span>        *elt, *<span class="keyword">new</span>;</span><br><span class="line">    <span class="keyword">size_t</span>       size;</span><br><span class="line">    <span class="keyword">ngx_uint_t</span>   nalloc;</span><br><span class="line">    <span class="keyword">ngx_pool_t</span>  *p;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* n个元素需要的空间大小 */</span></span><br><span class="line">    size = n * a-&gt;size;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 如果超过了数组的容量 */</span></span><br><span class="line">    <span class="keyword">if</span> (a-&gt;nelts + n &gt; a-&gt;nalloc) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* the array is full */</span></span><br><span class="line"></span><br><span class="line">        p = a-&gt;pool;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 如果数组在内存池中能够保证连续 且 内存池中可分配空间大小满足要申请的n个元素大小 */</span></span><br><span class="line">        <span class="keyword">if</span> ((u_char *) a-&gt;elts + a-&gt;size * a-&gt;nalloc == p-&gt;d.last</span><br><span class="line">            &amp;&amp; p-&gt;d.last + size &lt;= p-&gt;d.end)</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="comment">/*</span></span><br><span class="line"><span class="comment">             * the array allocation is the last in the pool</span></span><br><span class="line"><span class="comment">             * and there is space for new allocation</span></span><br><span class="line"><span class="comment">             */</span></span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 直接移动内存池可分配指针 并把数组容量加上n */</span> </span><br><span class="line">            p-&gt;d.last += size;</span><br><span class="line">            a-&gt;nalloc += n;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">/* 数组在内存池中不能够保证连续 或者 内存池中可分配空间大小 */</span></span><br><span class="line">            <span class="comment">/* allocate a new array */</span></span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 扩容后的数组容量大小 */</span></span><br><span class="line">            nalloc = <span class="number">2</span> * ((n &gt;= a-&gt;nalloc) ? n : a-&gt;nalloc);</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 从内存池中申请内存 */</span></span><br><span class="line">            <span class="keyword">new</span> = ngx_palloc(p, nalloc * a-&gt;size);</span><br><span class="line">            <span class="keyword">if</span> (<span class="keyword">new</span> == <span class="literal">NULL</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 把之前存储数组元素的内存数据拷贝到新的内存中 */</span></span><br><span class="line">            ngx_memcpy(<span class="keyword">new</span>, a-&gt;elts, a-&gt;nelts * a-&gt;size);</span><br><span class="line">            </span><br><span class="line">            <span class="comment">/* 重新指向一下保存数组元素的地址 和数组大小 */</span></span><br><span class="line">            a-&gt;elts = <span class="keyword">new</span>;</span><br><span class="line">            a-&gt;nalloc = nalloc;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 获取内存池中新元素的位置  元素起始地址 + (每个元素大小 * 数组实际使用大小)  */</span></span><br><span class="line">    elt = (u_char *) a-&gt;elts + a-&gt;size * a-&gt;nelts;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 数组实际使用数量 加n */</span></span><br><span class="line">    a-&gt;nelts += n;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> elt;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/nginx/" rel="tag"># nginx</a>
+              <a href="/tags/array/" rel="tag"># array</a>
+              <a href="/tags/%E6%95%B0%E7%BB%84/" rel="tag"># 数组</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2017/06/28/ngx-string/" rel="prev" title="Nginx源码解读-字符串">
+                  <i class="fa fa-chevron-left"></i> Nginx源码解读-字符串
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2017/07/03/ngx-list/" rel="next" title="Nginx源码解读-list">
+                  Nginx源码解读-list <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="概述APNs推送是IOS App的一个重要功能，一般情况下大部分人都会采用第三方的集成(极光、个推等等)。但是既然是第三方的，肯定有某些地方不能满足我们的实际要求，比如推送的频率、次数、优先级等其他方面。基于以上问题，我们还是有必要去搭建一个自己的推送后台的，把所有的可控因素掌握在自己的手里。 搭建一个自己的推送后台的话，主要分为推送证书制作,收集设备信息,推送通知消息这三个步骤。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="后台集成APNs推送证书">
+<meta property="og:url" content="http://suntw2015.github.io/2016/11/03/ios-apns-push/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="概述APNs推送是IOS App的一个重要功能，一般情况下大部分人都会采用第三方的集成(极光、个推等等)。但是既然是第三方的，肯定有某些地方不能满足我们的实际要求，比如推送的频率、次数、优先级等其他方面。基于以上问题，我们还是有必要去搭建一个自己的推送后台的，把所有的可控因素掌握在自己的手里。 搭建一个自己的推送后台的话，主要分为推送证书制作,收集设备信息,推送通知消息这三个步骤。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2016-11-03T03:45:16.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.175Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="APNs">
+<meta property="article:tag" content="证书">
+<meta property="article:tag" content="PHP">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2016/11/03/ios-apns-push/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>后台集成APNs推送证书 | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A8%E9%80%81%E8%AF%81%E4%B9%A6%E5%88%B6%E4%BD%9C"><span class="nav-number">2.</span> <span class="nav-text">推送证书制作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Step1"><span class="nav-number">2.1.</span> <span class="nav-text">Step1</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Step2"><span class="nav-number">2.2.</span> <span class="nav-text">Step2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Step3"><span class="nav-number">2.3.</span> <span class="nav-text">Step3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Step4"><span class="nav-number">2.4.</span> <span class="nav-text">Step4</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%94%B6%E9%9B%86%E8%AE%BE%E5%A4%87%E4%BF%A1%E6%81%AF"><span class="nav-number">3.</span> <span class="nav-text">收集设备信息</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A8%E9%80%81%E9%80%9A%E7%9F%A5%E6%B6%88%E6%81%AF"><span class="nav-number">4.</span> <span class="nav-text">推送通知消息</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2016/11/03/ios-apns-push/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          后台集成APNs推送证书
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2016-11-03 11:45:16" itemprop="dateCreated datePublished" datetime="2016-11-03T11:45:16+08:00">2016-11-03</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/IOS/" itemprop="url" rel="index"><span itemprop="name">IOS</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>APNs推送是IOS App的一个重要功能，一般情况下大部分人都会采用第三方的集成(极光、个推等等)。但是既然是第三方的，肯定有某些地方不能满足我们的实际要求，比如推送的频率、次数、优先级等其他方面。基于以上问题，我们还是有必要去搭建一个自己的推送后台的，把所有的可控因素掌握在自己的手里。</p>
+<p>搭建一个自己的推送后台的话，主要分为<code>推送证书制作</code>,<code>收集设备信息</code>,<code>推送通知消息</code>这三个步骤。</p>
+<span id="more"></span>
+
+<h2 id="推送证书制作"><a href="#推送证书制作" class="headerlink" title="推送证书制作"></a>推送证书制作</h2><p>推送证书的制作包括两个制作过程，一个是在<a target="_blank" rel="noopener" href="https://developer.apple.com/account/ios/certificate">苹果开发者后台</a>制作推送证书，证书类型选择<code>Apple Push Notification service SSL (Sandbox &amp; Production)</code>,第二个是基于第一步的证书生成一个.pem格式的证书提供给后台使用。</p>
+<p>第一步在<a target="_blank" rel="noopener" href="https://developer.apple.com/account/ios/certificate">苹果开发后台</a>制作推送证书，网上有大把的文章，在这里就不再详细描述了，接下来的着重描述下生成后台使用的证书过程。</p>
+<h3 id="Step1"><a href="#Step1" class="headerlink" title="Step1"></a>Step1</h3><p>从<code>钥匙串访问</code>中导出推送证书的公钥和私钥，命名为<code>apns_cert.p12</code>和<code>apns_key.p12</code>,导出的格式注意选择p12类型</p>
+<h3 id="Step2"><a href="#Step2" class="headerlink" title="Step2"></a>Step2</h3><p>把<code>apns_cert.p12</code>,<code>apns_key.p12</code>转换成对应的.pem文件，文件命名为<code>apns_cert.pem</code>,<code>apns_key.pem</code></p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">openssl pkcs12 -clcerts -nokeys -out apns_cert.pem -in apns_cert.p12</span><br><span class="line">openssl pkcs12 -nocerts -out apns_key.pem -in apns_key.p12</span><br></pre></td></tr></table></figure>
+
+<h3 id="Step3"><a href="#Step3" class="headerlink" title="Step3"></a>Step3</h3><p>如果在使用的推送的时候不用输入密码，就要执行本步骤，把apns_key.pem中的密码给去掉，建议执行,得到新文件<code>apns_key_noencrypt.pem</code></p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">openssl rsa -in apns_key.pem -out apns_key_noencrypt.pem</span><br></pre></td></tr></table></figure>
+
+<h3 id="Step4"><a href="#Step4" class="headerlink" title="Step4"></a>Step4</h3><p>把两个.pem文件合成一个 得到最终可供后台使用的文件 <code>apns_product.pem</code></p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">cat apns_cert.pem apns_key_noencrypt.pem &gt; apns_product.pem</span><br></pre></td></tr></table></figure>
+
+<p>得到最终文件之后，我们可以使用以下命令测试以下我们生成的证书是否能用,如果能够输出SSL-Session的链接信息的话，就说明我们的证书没问题了</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">openssl s_client -connect gateway.sandbox.push.apple.com:2195 -cert apns_product.pem</span><br></pre></td></tr></table></figure>
+
+<h2 id="收集设备信息"><a href="#收集设备信息" class="headerlink" title="收集设备信息"></a>收集设备信息</h2><p>当我们需要去给一个设备进行推送消息的时候，我们需要知道该设备的一个标识，这个标识就是deviceToken了。deviceToken是一个64位长度的一个字符串，这个标识对于同一个设备的不用APP都是不同的。并且即使是同一个设备的同一个APP而言，如果APP反复卸载安装，这个标示也有可能发生变化。因此，一般来说我们应该在APP启动的过程中去收集deviceToken，然后传给服务器保存起来，服务器根据当前用户情况去选择是否更新用户的设备信息。</p>
+<p>首先先去苹果服务器注册deviceToken</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions &#123;</span><br><span class="line"></span><br><span class="line">&#x2F;&#x2F;注册远程通知类型</span><br><span class="line">UIUserNotificationSettings *sting &#x3D; [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeAlert | UIUserNotificationTypeSound categories:nil];</span><br><span class="line">[application registerUserNotificationSettings:sting];</span><br><span class="line">[application registerForRemoteNotifications];</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当deviceToken注册成功之后，我们可以在这个方法里面获取到deviceToken</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">- (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken&#123;</span><br><span class="line">&#x2F;&#x2F;把deviceToken存起来发给服务器</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当deviceToken注册失败后，我们可以再这个方法里面获取失败的信息</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">- (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error&#123;</span><br><span class="line">&#x2F;&#x2F;失败的信息</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当APP接收到远程通知时，需要根据APP的三种状态进行不同的处理</p>
+<p>1.APP未启动</p>
+<p>这种情况下当点击通知栏进入到APP的时候会在调用<code>(BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions </code>时将通知消息放在launchOptions中，而通过点击APP图标进入应用程序时，该字典是空的。</p>
+<p>2.APP启动在后台</p>
+<p>这种情况下点击通知栏进入APP时会调用<code>(void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler</code>，通知消息会放在userInfo中</p>
+<p>3.APP启动在前台</p>
+<p>这种情况下接收到远程通知时，并没有通知栏的提示和提示声音，只能自己去在当前界面弹框提示或者在某个地方显示一个数字标示表示有新消息，并且会自动调用<code>(void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler</code>方法。由于第二种和第三种情况都会调用该方法，所以我们需要在这个方法里面去根据APP在前台还是后台做不同的处理。</p>
+<h2 id="推送通知消息"><a href="#推送通知消息" class="headerlink" title="推送通知消息"></a>推送通知消息</h2><p>到这一步，我们的准备工作就都做好了，接下来就可以去写后端的推送逻辑了。需要注意一点的是，苹果提供的APNs推送服务器有两个，一个是开发环境的，一个是正式环境的，要根据实际情况选择相应的服务器。</p>
+<ul>
+<li>开发环境 ssl://gateway.sandbox.push.apple.com:2195  一般来说通过Xcode直接安装的都会走这个</li>
+<li>正式环境 ssl://gateway.push.apple.com:2195    通过ipa包安装或者APP Store安装的会走这个</li>
+</ul>
+<p>后台测试推送代码</p>
+<figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line"></span><br><span class="line"><span class="comment">//推送目标设备号(测试环境和正式环境不一样)</span></span><br><span class="line"><span class="variable">$deviceToken</span> = <span class="string">&#x27;4f707f4eb373dfbad83188ae1c71ce3dd9eba983b8234b777a24157df20915f4&#x27;</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">//证书路径</span></span><br><span class="line"><span class="variable">$pem</span> = dirname(<span class="keyword">__FILE__</span>) . <span class="string">&#x27;/&#x27;</span> . <span class="string">&#x27;apns-product.pem&#x27;</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">//测试服务器</span></span><br><span class="line"><span class="variable">$apnsHost</span> = <span class="string">&#x27;ssl://gateway.sandbox.push.apple.com:2195&#x27;</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">//正式服务器</span></span><br><span class="line"><span class="comment">//$apnsHost = &#x27;ssl://gateway.push.apple.com:2195&#x27;;</span></span><br><span class="line"></span><br><span class="line"><span class="variable">$content</span> = <span class="string">&#x27;随着互联网的发展速度迅猛，前端工程师职业越来越火热，想学习Web前端技能吗 ? 该路径从基础知识到实战案例演练，一步步带您快速掌握如何搭建网站静态页面、开发网站交互特效，为您打开WEB前端工程师大门。还在等什么？快来学习吧!&#x27;</span>;</span><br><span class="line"><span class="variable">$body</span> = <span class="keyword">array</span>(<span class="string">&quot;aps&quot;</span> =&gt; <span class="keyword">array</span>(<span class="string">&quot;alert&quot;</span> =&gt; <span class="variable">$content</span>,<span class="string">&quot;badge&quot;</span> =&gt; <span class="number">5</span>,<span class="string">&quot;sound&quot;</span>=&gt;<span class="string">&#x27;default&#x27;</span>),<span class="string">&#x27;url&#x27;</span>=&gt;<span class="string">&#x27;http://keeper.fxtrip.com/fun/index?t=12&#x27;</span>);</span><br><span class="line"></span><br><span class="line"><span class="variable">$ctx</span> = stream_context_create();</span><br><span class="line">stream_context_set_option(<span class="variable">$ctx</span>,<span class="string">&quot;ssl&quot;</span>,<span class="string">&quot;local_cert&quot;</span>,<span class="variable">$pem</span>);</span><br><span class="line"></span><br><span class="line"><span class="variable">$pass</span> = <span class="string">&quot;&quot;</span>;     <span class="comment">//如果有密码的话</span></span><br><span class="line">stream_context_set_option(<span class="variable">$ctx</span>, <span class="string">&#x27;ssl&#x27;</span>, <span class="string">&#x27;passphrase&#x27;</span>, <span class="variable">$pass</span>);</span><br><span class="line"></span><br><span class="line"><span class="variable">$fp</span> = stream_socket_client(<span class="variable">$apnsHost</span>, <span class="variable">$err</span>, <span class="variable">$errstr</span>, <span class="number">60</span>, STREAM_CLIENT_CONNECT, <span class="variable">$ctx</span>);</span><br><span class="line"><span class="keyword">if</span> (!<span class="variable">$fp</span>) &#123;</span><br><span class="line"><span class="keyword">echo</span> <span class="string">&quot;Failed to connect <span class="subst">$err</span> <span class="subst">$errstr</span>&quot;</span>;</span><br><span class="line"><span class="keyword">return</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">print</span> <span class="string">&quot;Connection OK\n&quot;</span>;</span><br><span class="line"><span class="variable">$payload</span> = json_encode(<span class="variable">$body</span>);</span><br><span class="line"><span class="variable">$msg</span> = chr(<span class="number">0</span>) . pack(<span class="string">&quot;n&quot;</span>,<span class="number">32</span>) . pack(<span class="string">&quot;H*&quot;</span>, str_replace(<span class="string">&#x27; &#x27;</span>, <span class="string">&#x27;&#x27;</span>, <span class="variable">$deviceToken</span>)) . pack(<span class="string">&quot;n&quot;</span>,strlen(<span class="variable">$payload</span>)) . <span class="variable">$payload</span>;</span><br><span class="line"><span class="keyword">echo</span> <span class="string">&quot;sending message :&quot;</span> . <span class="variable">$payload</span> .<span class="string">&quot;\n&quot;</span>;</span><br><span class="line">fwrite(<span class="variable">$fp</span>, <span class="variable">$msg</span>);</span><br><span class="line">fclose(<span class="variable">$fp</span>);</span><br></pre></td></tr></table></figure>
+
+
+
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/APNs/" rel="tag"># APNs</a>
+              <a href="/tags/%E8%AF%81%E4%B9%A6/" rel="tag"># 证书</a>
+              <a href="/tags/PHP/" rel="tag"># PHP</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+            </div>
+            <div class="post-nav-item">
+                <a href="/2016/11/13/ios-framework-combine/" rel="next" title="IOS动态库多个CPU架构合并">
+                  IOS动态库多个CPU架构合并 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

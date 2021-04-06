@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css">
+
+<script class="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"suntw2015.github.io","root":"/","images":"/images","scheme":"Muse","version":"8.3.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}};
+  </script>
+<meta name="description" content="前言Nginx的字符串表示方法和C语言中的字符串表示方法不太一样，在C语言中一个字符串是从某一个地址开始，然后往后遍历直到遇到\0才表示这个字符串结束了。但是在Nginx中，根据实际的使用场景，在C语言的基础上对其稍加封装了一下，字符串的结束位置不再以\0作为结束标志，而是给出一个长度来计算结束位置。总的来说C语言中的字符串是通过起始位置和结束位置来确认，Nginx中则是通过起始位置和长度来确认。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Nginx源码解读-字符串">
+<meta property="og:url" content="http://suntw2015.github.io/2017/06/28/ngx-string/index.html">
+<meta property="og:site_name" content="MadeLife">
+<meta property="og:description" content="前言Nginx的字符串表示方法和C语言中的字符串表示方法不太一样，在C语言中一个字符串是从某一个地址开始，然后往后遍历直到遇到\0才表示这个字符串结束了。但是在Nginx中，根据实际的使用场景，在C语言的基础上对其稍加封装了一下，字符串的结束位置不再以\0作为结束标志，而是给出一个长度来计算结束位置。总的来说C语言中的字符串是通过起始位置和结束位置来确认，Nginx中则是通过起始位置和长度来确认。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2017-06-28T08:23:42.000Z">
+<meta property="article:modified_time" content="2021-04-06T04:02:09.184Z">
+<meta property="article:author" content="孙天文">
+<meta property="article:tag" content="nginx">
+<meta property="article:tag" content="string">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://suntw2015.github.io/2017/06/28/ngx-string/">
+
+
+<script class="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+<title>Nginx源码解读-字符串 | MadeLife</title>
+  
+
+
+
+
+  <noscript>
+  <style>
+  body { margin-top: 2rem; }
+
+  .use-motion .menu-item,
+  .use-motion .sidebar,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header {
+    visibility: visible;
+  }
+
+  .use-motion .header,
+  .use-motion .site-brand-container .toggle,
+  .use-motion .footer { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle,
+  .use-motion .custom-logo-image {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line {
+    transform: scaleX(1);
+  }
+
+  .search-pop-overlay, .sidebar-nav { display: none; }
+  .sidebar-panel { display: block; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <h1 class="site-title">MadeLife</h1>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%82%A8%E5%A4%87%E7%9F%A5%E8%AF%86"><span class="nav-number">2.</span> <span class="nav-text">储备知识</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E5%AE%9A%E4%B9%89"><span class="nav-number">3.</span> <span class="nav-text">数据结构定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E5%87%BD%E6%95%B0"><span class="nav-number">4.</span> <span class="nav-text">主要函数</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-string"><span class="nav-number">4.1.</span> <span class="nav-text">ngx_string</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-null-string"><span class="nav-number">4.2.</span> <span class="nav-text">ngx_null_string</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-str-set"><span class="nav-number">4.3.</span> <span class="nav-text">ngx_str_set</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-str-null"><span class="nav-number">4.4.</span> <span class="nav-text">ngx_str_null</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%AD%97%E7%AC%A6%E5%A4%A7%E5%B0%8F%E5%86%99%E8%BD%AC%E6%8D%A2"><span class="nav-number">4.5.</span> <span class="nav-text">字符大小写转换</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strlow"><span class="nav-number">4.6.</span> <span class="nav-text">ngx_strlow</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%AD%97%E7%AC%A6%E4%B8%B2%E6%8B%B7%E8%B4%9D%E7%9B%B8%E5%85%B3%E5%AE%8F%E5%AE%9A%E4%B9%89"><span class="nav-number">4.7.</span> <span class="nav-text">字符串拷贝相关宏定义</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strlchr"><span class="nav-number">4.8.</span> <span class="nav-text">ngx_strlchr</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-memcpy-amp-ngx-cpymem"><span class="nav-number">4.9.</span> <span class="nav-text">ngx_memcpy &amp; ngx_cpymem</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-copy"><span class="nav-number">4.10.</span> <span class="nav-text">ngx_copy</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-memmove"><span class="nav-number">4.11.</span> <span class="nav-text">ngx_memmove</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-movemem"><span class="nav-number">4.12.</span> <span class="nav-text">ngx_movemem</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-memcmp"><span class="nav-number">4.13.</span> <span class="nav-text">ngx_memcmp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-cpystrn"><span class="nav-number">4.14.</span> <span class="nav-text">ngx_cpystrn</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-pstrdup"><span class="nav-number">4.15.</span> <span class="nav-text">ngx_pstrdup</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strcasecmp"><span class="nav-number">4.16.</span> <span class="nav-text">ngx_strcasecmp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strncasecmp"><span class="nav-number">4.17.</span> <span class="nav-text">ngx_strncasecmp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strnstr"><span class="nav-number">4.18.</span> <span class="nav-text">ngx_strnstr</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strstrn"><span class="nav-number">4.19.</span> <span class="nav-text">ngx_strstrn</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strcasestrn"><span class="nav-number">4.20.</span> <span class="nav-text">ngx_strcasestrn</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-strlcasestrn"><span class="nav-number">4.21.</span> <span class="nav-text">ngx_strlcasestrn</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-rstrncmp"><span class="nav-number">4.22.</span> <span class="nav-text">ngx_rstrncmp</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ngx-rstrncasecmp"><span class="nav-number">4.23.</span> <span class="nav-text">ngx_rstrncasecmp</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">孙天文</p>
+  <div class="site-description" itemprop="description">记录一些随笔</div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">22</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">47</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/suntw2015" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;suntw2015" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://suntw2015.github.io/2017/06/28/ngx-string/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="孙天文">
+      <meta itemprop="description" content="记录一些随笔">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="MadeLife">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Nginx源码解读-字符串
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2017-06-28 16:23:42" itemprop="dateCreated datePublished" datetime="2017-06-28T16:23:42+08:00">2017-06-28</time>
+    </span>
+      <span class="post-meta-item">
+        <span class="post-meta-item-icon">
+          <i class="far fa-calendar-check"></i>
+        </span>
+        <span class="post-meta-item-text">更新于</span>
+        <time title="修改时间：2021-04-06 12:02:09" itemprop="dateModified" datetime="2021-04-06T12:02:09+08:00">2021-04-06</time>
+      </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/nginx/" itemprop="url" rel="index"><span itemprop="name">nginx</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>Nginx的字符串表示方法和C语言中的字符串表示方法不太一样，在C语言中一个字符串是从某一个地址开始，然后往后遍历直到遇到<code>\0</code>才表示这个字符串结束了。但是在Nginx中，根据实际的使用场景，在C语言的基础上对其稍加封装了一下，字符串的结束位置不再以<code>\0</code>作为结束标志，而是给出一个长度来计算结束位置。总的来说C语言中的字符串是通过起始位置和结束位置来确认，Nginx中则是通过起始位置和长度来确认。</p>
+<p>详细说明可参照源码中<code>src/ngx_string.h|.c</code>文件。</p>
+<span id="more"></span>
+
+<h3 id="储备知识"><a href="#储备知识" class="headerlink" title="储备知识"></a>储备知识</h3><ul>
+<li><a href="/2017/06/30/ngx-array/" title="Nginx内存管理">Nginx内存管理</a></li>
+</ul>
+<h3 id="数据结构定义"><a href="#数据结构定义" class="headerlink" title="数据结构定义"></a>数据结构定义</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">size_t</span>      len;    <span class="comment">//字符串长度</span></span><br><span class="line">    u_char     *data;   <span class="comment">//字符串的起始位置</span></span><br><span class="line">&#125; <span class="keyword">ngx_str_t</span>;</span><br></pre></td></tr></table></figure>
+
+<p>字符串在Nginx中是一个名为<code>ngx_str_t</code>的结构体，在这个结构体当中我们可以看到包含了一个指示字符串长度的<code>len</code>和一个指向具体内容的指针变量<code>data</code>。这种表示方法和C语言中的字符串表示方法有点不太一样，熟悉C语言的应该知道字符串的表示只有一个字符指针来指向具体内容的开始位置，往后一直遇到<code>\0</code>为止。造成这种差异的主要原因是因为在Nginx涉及到字符串计算的地方，会经常性的遇到要求某一个字符串长度的情况。在这种应用场景之下，这种表示方法能够更方便快捷的得到结果。PHP的字符串实现上也是采用的这种方式，有兴趣的可以去看一下PHP的相关源码。</p>
+<p>Nginx中采用这种方法来表示字符串还有一个原因是共用内存，减小开销。比如在Nginx解析http请求的时候，会把请求的内容放一个字符串中。在这个字符串中，某一部分是<code>Content-Length</code>,另一部分是<code>User-Agent</code>这样等等。如果采用C语言的字符串表示的话，那么解析的过程中就需要去申请多块内存，每一块内存中分别去写入不同属性的内容。如果采用Nginx的这种表示方法，只需要把表示各种属性字符串的<code>data</code>指针指向请求的不同位置就好了，用<code>len</code>来表示结束的位置，这样能极大的减少内存的开销。</p>
+<p>由于Nginx的字符串和C语言的字符串的表示差异，一些C语言的自带的字符串函数就不能直接作用到Nginx当中了，因此Nginx实现一批适应于<code>ngx_str_t</code>字符串操作的字符串函数，我们可以在<code>ngx_string.h</code>中可以找到。</p>
+<h3 id="主要函数"><a href="#主要函数" class="headerlink" title="主要函数"></a>主要函数</h3><h4 id="ngx-string"><a href="#ngx-string" class="headerlink" title="ngx_string"></a>ngx_string</h4><p>通过C标准的字符串来构造一个<code>ngx_str_t</code>格式的字符串，由于在<code>ngx_str_t</code>中不需要保存<code>\0</code>，因此<code>len</code>的值应该减1</p>
+<blockquote>
+<p>使用这个宏定义的时候参数一定要是一个常量字符串，而不应该是一个字符指针，否则<code>sizeof(str)</code>的计算结果会大不一样</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_string(str)     &#123; sizeof(str) - 1, (u_char *) str &#125;</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-null-string"><a href="#ngx-null-string" class="headerlink" title="ngx_null_string"></a>ngx_null_string</h4><p>构造一个空的<code>ngx_str_t</code>格式的字符串</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_null_string     &#123; 0, NULL &#125;</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-str-set"><a href="#ngx-str-set" class="headerlink" title="ngx_str_set"></a>ngx_str_set</h4><p>通过C标准的字符串，给<code>ngx_str_t</code>格式的字符串赋值</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_str_set(str, text)                                               \</span></span><br><span class="line">    (str)-&gt;len = <span class="keyword">sizeof</span>(text) - <span class="number">1</span>; (str)-&gt;data = (u_char *) text</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-str-null"><a href="#ngx-str-null" class="headerlink" title="ngx_str_null"></a>ngx_str_null</h4><p>置空<code>ngx_str_t</code>字符串</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_str_null(str)   (str)-&gt;len = 0; (str)-&gt;data = NULL</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="字符大小写转换"><a href="#字符大小写转换" class="headerlink" title="字符大小写转换"></a>字符大小写转换</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_tolower(c)      (u_char) ((c &gt;= <span class="meta-string">&#x27;A&#x27;</span> &amp;&amp; c &lt;= <span class="meta-string">&#x27;Z&#x27;</span>) ? (c | 0x20) : c)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_toupper(c)      (u_char) ((c &gt;= <span class="meta-string">&#x27;a&#x27;</span> &amp;&amp; c &lt;= <span class="meta-string">&#x27;z&#x27;</span>) ? (c &amp; ~0x20) : c)</span></span><br></pre></td></tr></table></figure>
+
+<p>为什么要把这个字符大小写单独拿出来说那，因为Nginx对字符的大小写转换的实现有点不太一样。我们都知道的同一个字母的大写和小写的Ascall码值差了32，从大写到小写就加上32，从小写到大写就减去32，很简单，一般大部分的人都会写出下面的这种方式：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_tolower(c)      (u_char) ((c &gt;= <span class="meta-string">&#x27;A&#x27;</span> &amp;&amp; c &lt;= <span class="meta-string">&#x27;Z&#x27;</span>) ? (c + 0x20) : c)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_toupper(c)      (u_char) ((c &gt;= <span class="meta-string">&#x27;a&#x27;</span> &amp;&amp; c &lt;= <span class="meta-string">&#x27;z&#x27;</span>) ? (c - ~0x20) : c)</span></span><br></pre></td></tr></table></figure>
+
+<p>对比一下可以看出Nginx采用了位操作的办法，这是因为A-Z的Ascall二进制表示为<code>1000001</code>-<code>1011010</code>,a-z的Ascall二进制表示为<code>1100001</code>-<code>1111010</code>，差值32的二进制为<code>0100000</code>。A-Z的二进制从右向左数第6位是0，a-z的二进制从右向左数第6位是1。第6位代表的就是32，因此在转换的时候，我们只要去变换一位就可以了。</p>
+<h4 id="ngx-strlow"><a href="#ngx-strlow" class="headerlink" title="ngx_strlow"></a>ngx_strlow</h4><p>该方法就是使用上面的<code>ngx_tolower</code>对一个字符串的n个字符进行小写转换，感觉循环里面的前三行可以用一行代码去搞定，这样的操作在其他的文件中经常能够看见，不知道是因为写这个文件的人的风格还是别的原因。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span></span><br><span class="line">ngx_strlow(u_char *dst, u_char *src, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">while</span> (n) &#123;</span><br><span class="line">        *dst = ngx_tolower(*src);</span><br><span class="line">        dst++;</span><br><span class="line">        src++;</span><br><span class="line">        n--;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="字符串拷贝相关宏定义"><a href="#字符串拷贝相关宏定义" class="headerlink" title="字符串拷贝相关宏定义"></a>字符串拷贝相关宏定义</h4><p>下面的这些宏定义就是把一些C语言字符串操作的方法换了一个名字</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_strncmp(s1, s2, n)  strncmp((const char *) s1, (const char *) s2, n)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* </span></span><br><span class="line"><span class="comment"> *  从一个字符串拷贝n个字符到另一个字符串</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_strcmp(s1, s2)  strcmp((const char *) s1, (const char *) s2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> *  从一个字符串拷贝所有字符到另一个字符串</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_strstr(s1, s2)  strstr((const char *) s1, (const char *) s2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> *  在s1中搜索s2出现的位置</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_strlen(s)       strlen((const char *) s)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> *  求字符串的长度</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_strchr(s1, c)   strchr((const char *) s1, (int) c)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * 在s1中搜索字符c出现的首次位置</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strlchr"><a href="#ngx-strlchr" class="headerlink" title="ngx_strlchr"></a>ngx_strlchr</h4><p>在一个字符串[p,last]范围内查找字符c在左侧出现的首个位置，找到的话返回相应的指针位置，否则返回NULL</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> ngx_inline u_char *</span><br><span class="line">ngx_strlchr(u_char *p, u_char *last, u_char c)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">while</span> (p &lt; last) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (*p == c) &#123;</span><br><span class="line">            <span class="keyword">return</span> p;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        p++;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-memcpy-amp-ngx-cpymem"><a href="#ngx-memcpy-amp-ngx-cpymem" class="headerlink" title="ngx_memcpy &amp; ngx_cpymem"></a>ngx_memcpy &amp; ngx_cpymem</h4><p>这两个函数都是拷贝n个字符到另一个字符，根据<code>NGX_MEMCPY_LIMIT</code>的不同来分别定义这两个函数的实现</p>
+<p>ngx_memcpy:从src拷贝n个字符到dst<br>ngx_cpymem:从src拷贝n个字符到dst并返回拷贝后的指针地址，此时指针指向第n+1的位置</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">if</span> (NGX_MEMCPY_LIMIT)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* 拷贝限制内存的情况下 */</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> *<span class="title">ngx_memcpy</span><span class="params">(<span class="keyword">void</span> *dst, <span class="keyword">const</span> <span class="keyword">void</span> *src, <span class="keyword">size_t</span> n)</span></span>;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_cpymem(dst, src, n)   (((u_char *) ngx_memcpy(dst, src, n)) + (n))</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">else</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* 拷贝不限制内存的情况下 */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_memcpy(dst, src, n)   (void) memcpy(dst, src, n)</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_cpymem(dst, src, n)   (((u_char *) memcpy(dst, src, n)) + (n))</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-copy"><a href="#ngx-copy" class="headerlink" title="ngx_copy"></a>ngx_copy</h4><p>从src拷贝len长度的字符到dst，这个函数根据编译器的类型不同实现的具体方法也不同。在第一种方式里面可以看到如果拷贝的长度在17个字符以内，采用的是一个循环去拷贝，官方注释里面说是这样的情况下效率更高，这里就不深究了。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">if</span> ( __INTEL_COMPILER &gt;= 800 )</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> ngx_inline u_char *</span><br><span class="line">ngx_copy(u_char *dst, u_char *src, <span class="keyword">size_t</span> len)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">if</span> (len &lt; <span class="number">17</span>) &#123;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">while</span> (len) &#123;</span><br><span class="line">            *dst++ = *src++;</span><br><span class="line">            len--;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> dst;</span><br><span class="line"></span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> ngx_cpymem(dst, src, len);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">else</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_copy                  ngx_cpymem</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-memmove"><a href="#ngx-memmove" class="headerlink" title="ngx_memmove"></a>ngx_memmove</h4><p>从src拷贝n个字节到dst，如果目标区域和源区域有重叠的话，memmove能够保证源串在被覆盖之前将重叠区域的字节拷贝到目标区域中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_memmove(dst, src, n)   (void) memmove(dst, src, n)</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-movemem"><a href="#ngx-movemem" class="headerlink" title="ngx_movemem"></a>ngx_movemem</h4><p>在ngx_memmove功能的基础上，返回指向n+1字节的指针</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_movemem(dst, src, n)   (((u_char *) memmove(dst, src, n)) + (n))</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-memcmp"><a href="#ngx-memcmp" class="headerlink" title="ngx_memcmp"></a>ngx_memcmp</h4><p>比较s1,s2两块内存的前n个字节</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> ngx_memcmp(s1, s2, n)  memcmp((const char *) s1, (const char *) s2, n)</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-cpystrn"><a href="#ngx-cpystrn" class="headerlink" title="ngx_cpystrn"></a>ngx_cpystrn</h4><p>从src字符串中拷贝n个字符到dst字符串中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_cpystrn(u_char *dst, u_char *src, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">if</span> (n == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> dst;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">while</span> (--n) &#123;</span><br><span class="line">        *dst = *src;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (*dst == <span class="string">&#x27;\0&#x27;</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> dst;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        dst++;</span><br><span class="line">        src++;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    *dst = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> dst;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-pstrdup"><a href="#ngx-pstrdup" class="headerlink" title="ngx_pstrdup"></a>ngx_pstrdup</h4><p>从内存池里面申请一块内存，并用src里面的内容填充，并返回该内存的地址</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_pstrdup(<span class="keyword">ngx_pool_t</span> *pool, <span class="keyword">ngx_str_t</span> *src)</span><br><span class="line">&#123;</span><br><span class="line">    u_char  *dst;</span><br><span class="line"></span><br><span class="line">    dst = ngx_pnalloc(pool, src-&gt;len);  <span class="comment">/* 从内存池里申请内存 */</span></span><br><span class="line">    <span class="keyword">if</span> (dst == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    ngx_memcpy(dst, src-&gt;data, src-&gt;len); <span class="comment">/* 拷贝内存里的内容 */</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> dst;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strcasecmp"><a href="#ngx-strcasecmp" class="headerlink" title="ngx_strcasecmp"></a>ngx_strcasecmp</h4><p>比较两个字符串，忽略大小写</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_strcasecmp(u_char *s1, u_char *s2)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_uint_t</span>  c1, c2;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> ( ;; ) &#123;</span><br><span class="line">        c1 = (<span class="keyword">ngx_uint_t</span>) *s1++;</span><br><span class="line">        c2 = (<span class="keyword">ngx_uint_t</span>) *s2++;</span><br><span class="line"></span><br><span class="line">        c1 = (c1 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c1 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c1 | <span class="number">0x20</span>) : c1;</span><br><span class="line">        c2 = (c2 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c2 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c2 | <span class="number">0x20</span>) : c2;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (c1 == c2) &#123;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> (c1) &#123;</span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> c1 - c2;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strncasecmp"><a href="#ngx-strncasecmp" class="headerlink" title="ngx_strncasecmp"></a>ngx_strncasecmp</h4><p>比较两个字符串前n个字符，忽略大小写</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_strncasecmp(u_char *s1, u_char *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_uint_t</span>  c1, c2;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">while</span> (n) &#123;</span><br><span class="line">        c1 = (<span class="keyword">ngx_uint_t</span>) *s1++;</span><br><span class="line">        c2 = (<span class="keyword">ngx_uint_t</span>) *s2++;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 忽略大小写 */</span></span><br><span class="line">        c1 = (c1 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c1 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c1 | <span class="number">0x20</span>) : c1;</span><br><span class="line">        c2 = (c2 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c2 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c2 | <span class="number">0x20</span>) : c2;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (c1 == c2) &#123;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 字符串没有结束，没有遇到\0 */</span></span><br><span class="line">            <span class="keyword">if</span> (c1) &#123;</span><br><span class="line">                n--;</span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> c1 - c2;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strnstr"><a href="#ngx-strnstr" class="headerlink" title="ngx_strnstr"></a>ngx_strnstr</h4><p>在字符串中查找另一个子串(在第一个字符串的len长度内)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_strnstr(u_char *s1, <span class="keyword">char</span> *s2, <span class="keyword">size_t</span> len)</span><br><span class="line">&#123;</span><br><span class="line">    u_char  c1, c2;</span><br><span class="line">    <span class="keyword">size_t</span>  n;</span><br><span class="line"></span><br><span class="line">    c2 = *(u_char *) s2++;</span><br><span class="line"></span><br><span class="line">    n = ngx_strlen(s2);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 匹配s1和s2首字母相同的位置 */</span></span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (len-- == <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            c1 = *s1++;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> (c1 == <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">while</span> (c1 != c2);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 如果s2的长度 大于s1剩余还未遍历的长度 直接返回 */</span></span><br><span class="line">        <span class="keyword">if</span> (n &gt; len) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* 当首s1某个位置的字母和s2首字母相同的话 比较前n个字符 */</span></span><br><span class="line">        <span class="comment">/* 这里需要注意的一点是 此时的s1,s2是指向的下一个字符 此时应该比较的字符数量应该是小于n的 但是在ngx_strncmp中判断了字符串是否截止了 这里用n也就没什么影响了 */</span></span><br><span class="line">    &#125; <span class="keyword">while</span> (ngx_strncmp(s1, (u_char *) s2, n) != <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 由于s1指向的是当前比较字符的下一个 因此要进行--操作 */</span></span><br><span class="line">    <span class="keyword">return</span> --s1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strstrn"><a href="#ngx-strstrn" class="headerlink" title="ngx_strstrn"></a>ngx_strstrn</h4><p>在字符串中去查找另一个子串(字符串是一个以<code>\0</code>结尾的静态字符串)</p>
+<blockquote>
+<p>注意<br>这里n为s2的长度减一 因为代码中是在确定了s1中s2首字母出现的位置后，从下一个字符开始比较的，具体看下面代码中的注释</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_strstrn(u_char *s1, <span class="keyword">char</span> *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    u_char  c1, c2;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 这里可以看到当c2获取了s2的首字母后 s2指向的是下一个字符 也就是参数n为何是s2的长度减一的缘故 */</span></span><br><span class="line">    c2 = *(u_char *) s2++;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">            c1 = *s1++;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> (c1 == <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">while</span> (c1 != c2);</span><br><span class="line"></span><br><span class="line">    &#125; <span class="keyword">while</span> (ngx_strncmp(s1, (u_char *) s2, n) != <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 由于s1指向的是当前比较字符的下一个 因此要进行--操作 */</span></span><br><span class="line">    <span class="keyword">return</span> --s1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strcasestrn"><a href="#ngx-strcasestrn" class="headerlink" title="ngx_strcasestrn"></a>ngx_strcasestrn</h4><p>和<code>ngx_strstrn</code>的功能一样都是在字符串中查找子串，只是这个函数里面是忽略了大小写的</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_strcasestrn(u_char *s1, <span class="keyword">char</span> *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_uint_t</span>  c1, c2;</span><br><span class="line"></span><br><span class="line">    c2 = (<span class="keyword">ngx_uint_t</span>) *s2++;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 转成小写 */</span></span><br><span class="line">    c2 = (c2 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c2 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c2 | <span class="number">0x20</span>) : c2;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">do</span> </span><br><span class="line">        <span class="comment">/* 确定s1中和s2首字母相同的位置 */</span></span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">            c1 = (<span class="keyword">ngx_uint_t</span>) *s1++;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> (c1 == <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* 转成小写 */</span></span><br><span class="line">            c1 = (c1 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c1 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c1 | <span class="number">0x20</span>) : c1;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">while</span> (c1 != c2);</span><br><span class="line"></span><br><span class="line">    &#125; <span class="keyword">while</span> (ngx_strncasecmp(s1, (u_char *) s2, n) != <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> --s1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-strlcasestrn"><a href="#ngx-strlcasestrn" class="headerlink" title="ngx_strlcasestrn"></a>ngx_strlcasestrn</h4><p>在<code>ngx_strcasestrn</code>的基础上对被搜索的字符串加上了一个范围限制，即在[s1,last]范围内去查找子串</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">u_char *</span><br><span class="line">ngx_strlcasestrn(u_char *s1, u_char *last, u_char *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">ngx_uint_t</span>  c1, c2;</span><br><span class="line"></span><br><span class="line">    c2 = (<span class="keyword">ngx_uint_t</span>) *s2++;</span><br><span class="line">    c2 = (c2 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c2 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c2 | <span class="number">0x20</span>) : c2;</span><br><span class="line">    last -= n;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (s1 &gt;= last) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            c1 = (<span class="keyword">ngx_uint_t</span>) *s1++;</span><br><span class="line"></span><br><span class="line">            c1 = (c1 &gt;= <span class="string">&#x27;A&#x27;</span> &amp;&amp; c1 &lt;= <span class="string">&#x27;Z&#x27;</span>) ? (c1 | <span class="number">0x20</span>) : c1;</span><br><span class="line"></span><br><span class="line">        &#125; <span class="keyword">while</span> (c1 != c2);</span><br><span class="line"></span><br><span class="line">    &#125; <span class="keyword">while</span> (ngx_strncasecmp(s1, s2, n) != <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> --s1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-rstrncmp"><a href="#ngx-rstrncmp" class="headerlink" title="ngx_rstrncmp"></a>ngx_rstrncmp</h4><p>从右开始比较两个字符串的n个字符</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_rstrncmp(u_char *s1, u_char *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">if</span> (n == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    n--;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> ( ;; ) &#123;</span><br><span class="line">        <span class="keyword">if</span> (s1[n] != s2[n]) &#123;</span><br><span class="line">            <span class="keyword">return</span> s1[n] - s2[n];</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (n == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        n--;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="ngx-rstrncasecmp"><a href="#ngx-rstrncasecmp" class="headerlink" title="ngx_rstrncasecmp"></a>ngx_rstrncasecmp</h4><p>从右开始比较两个字符串的n个字符，忽略大小写</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">ngx_int_t</span></span><br><span class="line">ngx_rstrncasecmp(u_char *s1, u_char *s2, <span class="keyword">size_t</span> n)</span><br><span class="line">&#123;</span><br><span class="line">    u_char  c1, c2;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (n == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    n--;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> ( ;; ) &#123;</span><br><span class="line">        c1 = s1[n];</span><br><span class="line">        <span class="keyword">if</span> (c1 &gt;= <span class="string">&#x27;a&#x27;</span> &amp;&amp; c1 &lt;= <span class="string">&#x27;z&#x27;</span>) &#123;</span><br><span class="line">            c1 -= <span class="string">&#x27;a&#x27;</span> - <span class="string">&#x27;A&#x27;</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        c2 = s2[n];</span><br><span class="line">        <span class="keyword">if</span> (c2 &gt;= <span class="string">&#x27;a&#x27;</span> &amp;&amp; c2 &lt;= <span class="string">&#x27;z&#x27;</span>) &#123;</span><br><span class="line">            c2 -= <span class="string">&#x27;a&#x27;</span> - <span class="string">&#x27;A&#x27;</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (c1 != c2) &#123;</span><br><span class="line">            <span class="keyword">return</span> c1 - c2;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (n == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        n--;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<div id="gitalk-container"></div>
+<script src="https://cdn.bootcss.com/blueimp-md5/2.12.0/js/md5.min.js"></script><link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css"><script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+
+		<script>
+		var gitalkConfig = {"clientID":"d86b0f2f03d666a5b4d5","clientSecret":"b0a4cdac98cafbe6f866ea2b76d0800306bda397","repo":"suntw2015","owner":"suntw2015","admin":["suntw2015"],"distractionFreeMode":false};
+	    gitalkConfig.id = md5(location.pathname);
+		var gitalk = new Gitalk(gitalkConfig);
+	    gitalk.render("gitalk-container");
+	    </script>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/nginx/" rel="tag"># nginx</a>
+              <a href="/tags/string/" rel="tag"># string</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2017/06/21/ngx-palloc/" rel="prev" title="Nginx源码解读-内存管理">
+                  <i class="fa fa-chevron-left"></i> Nginx源码解读-内存管理
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2017/06/30/ngx-array/" rel="next" title="Nginx源码解读-数组">
+                  Nginx源码解读-数组 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      const activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      const commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">孙天文</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
